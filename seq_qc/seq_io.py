@@ -10,7 +10,7 @@ import textwrap
 
 def open_output(filename):
     """
-    Decide how to open an output file for writing based on file extension
+    Decide how to open an output file for writing based on the file extension
     """
     extension = filename.split('.')[-1]
     if extension == 'gz':
@@ -45,14 +45,14 @@ def open_input(filename):
             break
 
     if compression is 'bz2':
-        filehandle = bz2file.BZ2File(filename=bufferedfile)
+        filehandle = bz2.BZ2File(filename)
         peek = filehandle.peek(1)
     elif compression is 'gz':
         if not bufferedfile.seekable():
             print_message("gziped data not streamable, pipe through zcat \
                              first", sys.stderr)
-        peek = gzip.GzipFile(filename=filename).read(1)
-        filehandle = gzip.GzipFile(filename=filename)
+        peek = gzip.GzipFile(filename).read(1)
+        filehandle = gzip.GzipFile(filename)
     else:
         peek = bufferedfile.peek(1)
         filehandle = bufferedfile
