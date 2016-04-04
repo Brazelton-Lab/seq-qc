@@ -92,7 +92,7 @@ def print_error(message):
     sys.exit(1)
 
 def program_info(prog, args, version):
-    print("{} {!s}".format(prog, version))
+    print("{} {!s}".format(prog, version), file=sys.stderr)
     print(textwrap.fill("Command line parameters: {}".format(' '.join(args)), 79), file=sys.stderr)
 
 def logger(loghandle, output):
