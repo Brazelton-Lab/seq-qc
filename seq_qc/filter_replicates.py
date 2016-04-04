@@ -140,7 +140,6 @@ def main():
 
     iterator = seq_io.get_iterator(f_file, args.r_file, args.interleaved)
 
-    seq_io.start_message('filter_replicates', all_args, __version__)
     seq_io.logger(args.log, "Replicate\tTemplate\tType\n")
 
     if args.out_format == 'fasta':
@@ -217,6 +216,7 @@ def main():
 
     j += 1
 
+    seq_io.program_info('filter_replicates', all_args, __version__)
     num_reps = i - j
     print("\nRead Pairs processed:\t{!s}\nReplicates found:\t{!s} "
         "({:.2%})\n".format(i, num_reps, num_reps / i), file=sys.stderr)
