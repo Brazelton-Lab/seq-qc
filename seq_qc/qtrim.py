@@ -215,7 +215,7 @@ def main():
 
         i += 1
 
-        seq_io.start_message('qtrim', all_args, __version__)
+        seq_io.program_info('qtrim', all_args, __version__)
         total = i * 2
         passed = pairs_passed * 2 + fsingles + rsingles
         print("\nRecords processed:\t{!s} ({!s} pairs)\nPassed filtering:\t"
