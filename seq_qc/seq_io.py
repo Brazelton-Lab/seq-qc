@@ -91,9 +91,9 @@ def print_error(message):
     print(textwrap.fill(message, 79), file=sys.stderr)
     sys.exit(1)
 
-def start_message(prog, args, version):
+def program_info(prog, args, version):
     print("{} {!s}".format(prog, version))
-    print(textwrap.fill("Starting {} with arguments: {}".format(prog, ' '.join(args)), 79), file=sys.stderr)
+    print(textwrap.fill("Command line parameters: {}".format(' '.join(args)), 79), file=sys.stderr)
 
 def logger(loghandle, output):
     if loghandle:

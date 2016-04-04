@@ -160,8 +160,6 @@ def main():
         parser.error("argument -v/--out-reverse is required when a reverse "
             "file is provided")
 
-    seq_io.start_message('qtrim', all_args, __version__)
-
     trim_tasks = {'l': (trim.trim_leading, args.lead_score), 
         't': (trim.trim_trailing, args.trail_score), 
         'w': (trim.adaptive_trim, args.sw)}
@@ -217,6 +215,7 @@ def main():
 
         i += 1
 
+        seq_io.start_message('qtrim', all_args, __version__)
         total = i * 2
         passed = pairs_passed * 2 + fsingles + rsingles
         print("\nRecords processed:\t{!s} ({!s} pairs)\nPassed filtering:\t"
@@ -245,6 +244,7 @@ def main():
 
         i += 1
  
+        seq_io.program_info('qtrim', all_args, __version__)
         passed = i - discarded
         print("\nRecords processed:\t{!s}\nPassed filtering:\t{!s} "
         "({:.2%})\nRecords discarded:\t{!s} ({:.2%})\n".format(i, passed,
