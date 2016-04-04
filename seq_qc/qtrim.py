@@ -1,15 +1,29 @@
 #! /usr/bin/env python
 """
-Trim and filter sequences using phred quality score information and length \
-thresholds
+Trim sequences using phred quality score information and filter reads by
+length
+
+For single-end and interleaved reads:
+    qtrim [options] [-o output] input
+ 
+For split paired-end reads:
+    qtrim [option] -o out.forward -v out.reverse -s out.singles in.forward in.reverse
+
+Input files must be in FASTQ format. Output can be in either FASTQ or FASTA 
+format. Compression using gzip and bzip2 algorithms is automatically detected 
+for input files. To compress output, add the appropriate file extension to the 
+file names (.gz, .bz2). For single-end or interleaved reads, use '-' to 
+indicate that input should be taken from standard input (stdin). Similarly, 
+leaving out the -o argument will cause output to be sent to standard output 
+(stdout).
 """
 
 from __future__ import print_function
 from __future__ import division
 
 __author__ = "Christopher Thornton"
-__date__ = "2016-01-18"
-__version__ = "0.10.2"
+__date__ = "2016-04-03"
+__version__ = "1.0.3"
 
 import argparse
 import seq_io
@@ -43,41 +57,40 @@ def parse_sw_arg(argument):
     try:
         window, score = argument.split(':')
     except ValueError:
-        seq_io.print_message("error: the input for -w/--window-size is "
-            "formatted incorrectly. See --help for instructions", sys.stderr)
+        seq_io.print_error("error: the input for -w/--window-size is "
+            "formatted incorrectly. See --help for instructions")
     else:
         if score.isdigit():
             score = int(score)
         else:
-            seq_io.print_message("error: score threshold should be an integer "
-                "value", sys.stderr)
+            seq_io.print_error("error: score threshold should be an integer "
+                "value")
         if window.isdigit():
             window = int(window)
         else:
             try:
                 window = float(window)
             except ValueError:
-                seq_io.print_message("error: window size should be either an "
-                    "integer or a fraction", sys.stderr)
+                seq_io.print_error("error: window size should be either an "
+                    "integer or a fraction")
 
     return (window, score)
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('-1', metavar='FILE', dest='f_file',
-        required=True,
+    parser.add_argument('f_file', metavar='in1.fastq',
         help="input reads in fastq format. Can be a file containing either "
-        "forward or interleaved reads if reads are paired-end [required]")
+        "single-end or forward/interleaved reads if reads are paired-end "
+        "[required]")
     input_arg = parser.add_mutually_exclusive_group(required=False)
     input_arg.add_argument('--interleaved',
         action='store_true',
         help="input is interleaved paired-end reads")
-    input_arg.add_argument('-2', metavar='FILE', dest='r_file',
+    input_arg.add_argument('r_file', metavar='in2.fastq', nargs='?',
         help="input reverse reads in fastq format")
     parser.add_argument('-o', '--out', metavar='FILE', dest='out_f',
-        required=True,
-        type=seq_io.open_output,
+        type=seq_io.open_output, default=sys.stdout,
         help="output trimmed reads [required]")
     parser.add_argument('-v', '--out-reverse', metavar='FILE', dest='out_r',
         type=seq_io.open_output,
@@ -85,8 +98,8 @@ def main():
     parser.add_argument('-s', '--singles', metavar='FILE', dest='out_s',
         type=seq_io.open_output,
         help="output trimmed orphaned reads")
-    parser.add_argument('-f', '--format', metavar='FORMAT', dest='out_format',
-        default='fastq',
+    parser.add_argument('-f', '--out-format', metavar='FORMAT', 
+        dest='out_format', default='fastq',
         choices=['fasta', 'fastq'],
         help="output files format (fastq or fasta) [default: fastq]")
     parser.add_argument('-l', '--log',
@@ -136,15 +149,16 @@ def main():
     args = parser.parse_args()
     all_args = sys.argv[1:]
 
-    iterator = seq_io.get_iterator(args.f_file, args.r_file, args.interleaved)
+    if args.f_file == '-':
+        f_file = sys.stdin
+    else:
+        f_file = args.f_file
 
-    if not args.out_s and (args.interleaved or args.r_file):
-        parser.error("argument -s/--singles is required when arguments -2 or "
-            "--interleaved are used")
+    iterator = seq_io.get_iterator(f_file, args.r_file, args.interleaved)
 
     if args.r_file and not args.out_r:
-        parser.error("argument -v/--out-reverse is required when argument -2 "
-            "is used")
+        parser.error("argument -v/--out-reverse is required when a reverse "
+            "file is provided")
 
     seq_io.start_message('qtrim', all_args, __version__)
 
@@ -158,8 +172,7 @@ def main():
         if value:
             trim_steps.append(trim_tasks[task])
     if len(trim_steps) < 1 and not (args.crop or args.headcrop):
-        seq_io.print_message("error: no trimming steps were applied", 
-            sys.stderr)
+        seq_io.print_error("error: no trimming steps were applied")
 
     if args.out_format == 'fasta':
         writer = seq_io.fasta_writer
@@ -175,10 +188,8 @@ def main():
         seq_io.logger(args.log, "Record\tForward length\tForward trimmed "
             "length\tReverse length\tReverse trimmed length\n")
 
-        num_pairs = pairs_passed = discarded_pairs = fsingles = rsingles = 0
-        for forward, reverse in iterator:
-            num_pairs += 1
-
+        pairs_passed = discarded_pairs = fsingles = rsingles = 0
+        for i, (forward, reverse) in enumerate(iterator):
             forward, flen, ftrim = apply_trimming(forward, trim_steps, 
                 args.qual_type, args.crop, args.headcrop, args.trunc_n)
             reverse, rlen, rtrim = apply_trimming(reverse, trim_steps, 
@@ -204,23 +215,23 @@ def main():
             seq_io.logger(args.log, "{}\t{}\t{}\t{}\t{}\n"
                 .format(forward['identifier'], flen, ftrim, rlen, rtrim))
 
-        total = num_pairs * 2
+        i += 1
+
+        total = i * 2
         passed = pairs_passed * 2 + fsingles + rsingles
         print("\nRecords processed:\t{!s} ({!s} pairs)\nPassed filtering:\t"
             "{!s} ({:.2%})\n  Paired reads kept:\t{!s} ({:.2%})\n  Forward "
             "only kept:\t{!s} ({:.2%})\n  Reverse only kept:\t{!s} ({:.2%})"
-            "\nRead pairs discarded:\t{!s} ({:.2%})\n".format(total, num_pairs,
-            passed, passed / total, pairs_passed, pairs_passed / num_pairs,
+            "\nRead pairs discarded:\t{!s} ({:.2%})\n".format(total, i,
+            passed, passed / total, pairs_passed, pairs_passed / i,
             fsingles, fsingles / total, rsingles, rsingles / total,
-            discarded_pairs, discarded_pairs / num_pairs))
+            discarded_pairs, discarded_pairs / i), file=sys.stderr)
 
     else:
         seq_io.logger(args.log, "Record\tLength\tTrimmed length\n")
 
-        total = discarded = 0
-        for record in iterator:
-            total += 1
-
+        discarded = 0
+        for i, record in enumerate(iterator):
             record, seqlen, trimlen = apply_trimming(record, trim_steps, 
                 args.qual_type, args.crop, args.headcrop, args.trunc_n) 
 
@@ -232,10 +243,12 @@ def main():
             seq_io.logger(args.log, "{}\t{}\t{}\n".format(record['identifier'],
                 seqlen, trimlen))
 
-        passed = total - discarded
+        i += 1
+ 
+        passed = i - discarded
         print("\nRecords processed:\t{!s}\nPassed filtering:\t{!s} "
-        "({:.2%})\nRecords discarded:\t{!s} ({:.2%})\n".format(total, passed,
-        passed / total, discarded, discarded / total))
+        "({:.2%})\nRecords discarded:\t{!s} ({:.2%})\n".format(i, passed,
+        passed / i, discarded, discarded / i), file=sys.stderr)
 
 if __name__ == "__main__":
     main()

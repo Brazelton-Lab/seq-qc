@@ -3,10 +3,9 @@
 ## About
 
 seq_qc is a python package for performing various quality control tasks on 
-sequencing reads. Currently, seq_qc has three programs for this - a 
-dereplicator for paired-end or single-end reads, a tool for trimming reads 
-based on length and quality score thresholds, and a tool for interleaving 
-paired-end reads.
+sequencing reads. Currently, seq_qc has two programs for this - a dereplicator 
+for paired-end reads and a tool for trimming reads based on length and quality 
+score thresholds.
 
 ## Requirements
 
@@ -22,10 +21,10 @@ pip install seq_qc
 
 ## Usage
 
-filter_replicates takes as input a fastq or fasta file. If the reads are 
-paired-end, the pairs can either be in separate files or a single interleaved 
-file. The types of replicates that filter_replicates can search for are exact, 
-5'-prefix, and reverse-complement replicates.
+filter_replicates takes as input fastq or fasta files. Paired reads can either 
+be split in separate files or can be in a single, interleaved file. The types 
+of replicates that filter_replicates can search for are exact, 5'-prefix, and 
+reverse-complement replicates.
 
 ### Examples
 
@@ -55,15 +54,3 @@ read to a desired length by removing bases from the start or end of the read.
     qtrim -1 input_interleaved.fastq -o output_interleaved.fastq --interleaved \
     --leading 20 --trailing 20 --trunc-n --min-len 60
 
-interleave_pairs takes paired reads in separate fastq or fasta files and 
-interleaves them in a single file. It can also act as a simple format 
-conversion tool by allowing the input to be in fastq format and the output in 
-fasta format.
-
-### Examples
-
-    interleave_pairs -1 input_forward.fastq.gz -2 input_reverse.fastq.gz \
-    --format fasta -o output_interleaved.fasta
-
-    interleave_pairs - 1 input_forward.fasta -2 input_reverse.fasta \
-    --format fasta -o output_interleaved.fasta

@@ -34,37 +34,40 @@ def open_input(filename):
     try:
         bufferedfile = io.open(file=filename, mode='rb', buffering=8192)
     except IOError:
-        print_message("error: unable to open {} for reading".format(filename),
-            sys.stderr)
-    num_bytes_to_peek = max(len(x) for x in file_signatures)
-    file_start = bufferedfile.peek(num_bytes_to_peek)
-    compression = None
-    for signature, ftype in file_signatures.items():
-        if file_start.startswith(signature):
-            compression = ftype
-            break
-
-    if compression is 'bz2':
-        filehandle = bz2.BZ2File(filename)
-        peek = filehandle.peek(1)
-    elif compression is 'gz':
-        if not bufferedfile.seekable():
-            print_message("gziped data not streamable, pipe through zcat \
-                             first", sys.stderr)
-        peek = gzip.GzipFile(filename).read(1)
-        filehandle = gzip.GzipFile(filename)
+        print_error("error: unable to open {} for reading".format(filename))
+    except TypeError:
+        filehandle = filename
+        parser = seq_parsers.fastq_parser
     else:
-        peek = bufferedfile.peek(1)
-        filehandle = bufferedfile
+        num_bytes_to_peek = max(len(x) for x in file_signatures)
+        file_start = bufferedfile.peek(num_bytes_to_peek)
+        compression = None
+        for signature, ftype in file_signatures.items():
+            if file_start.startswith(signature):
+                compression = ftype
+                break
 
-    parser = None
-    try:
-        if peek[0] == '>':
-            parser = seq_parsers.fasta_parser
-        elif peek[0] == '@':
-            parser = seq_parsers.fastq_parser
-    except IndexError as err:
-        return []  # empty file
+        if compression is 'bz2':
+            filehandle = bz2.BZ2File(filename)
+            peek = filehandle.peek(1)
+        elif compression is 'gz':
+            if not bufferedfile.seekable():
+                print_error("gziped data not streamable, pipe through zcat \
+                    first")
+            peek = gzip.GzipFile(filename).read(1)
+            filehandle = gzip.GzipFile(filename)
+        else:
+            peek = bufferedfile.peek(1)
+            filehandle = bufferedfile
+
+        parser = None
+        try:
+            if peek[0] == '>':
+                parser = seq_parsers.fasta_parser
+            elif peek[0] == '@':
+                parser = seq_parsers.fastq_parser
+        except IndexError as err:
+            return []  # empty file
 
     if parser is None:
         # return the filehandle instead of an iterator
@@ -84,14 +87,13 @@ def get_iterator(forward, reverse=None, interleaved=False):
 
     return iterator
 
-def print_message(message, destination=sys.stdout):
-    print(textwrap.fill(message, 79), file=destination)
-    if destination == sys.stderr:
-        sys.exit(1)
+def print_error(message):
+    print(textwrap.fill(message, 79), file=sys.stderr)
+    sys.exit(1)
 
 def start_message(prog, args, version):
     print("{} {!s}".format(prog, version))
-    print_message("Starting {} with arguments: {}".format(prog, ' '.join(args)))
+    print(textwrap.fill("Starting {} with arguments: {}".format(prog, ' '.join(args)), 79), file=sys.stderr)
 
 def logger(loghandle, output):
     if loghandle:
@@ -104,9 +106,9 @@ def fastq_writer(filehandle, record):
     try:
         quality = record['quality']
     except KeyError:
-        print_message("error: could not find quality score information for "
+        print_error("error: could not find quality score information for "
             "the sequences. Please verfiy that the input file is in fastq "
-            "format.", sys.stderr)
+            "format.")
 
     output = ("@{} {}\n{}\n+\n{}\n".format(record['identifier'],
         record['description'], record['sequence'], quality))
