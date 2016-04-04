@@ -1,16 +1,9 @@
 from setuptools import setup
-from os import path
-
-location = path.abspath(path.dirname(__file__))
-
-with open(path.join(location, 'README.md')) as fh:
-    longdesc = fh.read()
 
 setup(name='seq-qc',
-      version='0.16.0',
+      version='1.0.0',
       description='utilities for performing various preprocessing steps on '
           'sequencing reads',
-      long_description=longdesc,
       classifiers=[
           'Development Status :: 4 - Beta',
           'Intended Audience :: Science/Research',
@@ -34,8 +27,7 @@ setup(name='seq-qc',
       entry_points={
           'console_scripts': [
               'qtrim = seq_qc.qtrim:main',
-              'filter_replicates = seq_qc.filter_replicates:main',
-              'interleave_pairs = seq_qc.interleave_pairs:main'
+              'filter_replicates = seq_qc.filter_replicates:main'
           ]
       }
       )

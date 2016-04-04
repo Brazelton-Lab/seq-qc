@@ -1,5 +1,5 @@
 from __future__ import division
-from seq_io import print_message
+from seq_io import print_error
 import sys
 
 quality_score_encoding = {
@@ -24,8 +24,7 @@ def translate_quality(base_qual, encoding='phred33'):
     try:
         base_score = quality_score_encoding[encoding][base_qual]
     except KeyError:
-        print_message("error: wrong quality score encoding provided", 
-            destination=sys.stderr)
+        print_error("error: wrong quality score encoding provided")
     else:
         return base_score
 
