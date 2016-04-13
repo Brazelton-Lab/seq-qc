@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(name='seq-qc',
-      version='1.0.1',
+      version='1.0.2',
       description='utilities for performing various preprocessing steps on '
           'sequencing reads',
       classifiers=[
