@@ -1,7 +1,10 @@
-from setuptools import setup
+from setuptools import setup, Extension
+
+bernoulli = Extension('bernoulli', sources=['seq_qc/bernoullimodule.c'])
 
 setup(name='seq-qc',
-      version='1.0.1',
+      version='1.1.3',
+      packages=['seq_qc',],
       description='utilities for performing various preprocessing steps on '
           'sequencing reads',
       classifiers=[
@@ -17,17 +20,19 @@ setup(name='seq-qc',
       ],
       keywords='bioinformatics sequence preprocessing quality control',
       url='https://github.com/Brazelton-Lab/seq_qc/',
+      download_url = 'https://github.com/fBrazelton-Lab/seq_qc/tarball/v1.1.0',
       author='Christopher Thornton',
       author_email='christopher.thornton@utah.edu',
       license='GPLv2',
-      packages=['seq_qc',],
       include_package_data=True,
       zip_safe=False,
       install_requires=['screed',],
+      ext_modules=[bernoulli,],
       entry_points={
           'console_scripts': [
               'qtrim = seq_qc.qtrim:main',
-              'filter_replicates = seq_qc.filter_replicates:main'
+              'filter_replicates = seq_qc.filter_replicates:main',
+              'error_filter = seq_qc.error_filter:main'
           ]
       }
       )
