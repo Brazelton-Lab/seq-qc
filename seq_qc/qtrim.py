@@ -146,12 +146,12 @@ def main():
         type=get_list,
         help="remove exactly the number of bases specified from the start of "
         "the read. Different values can be provided for forward and reverse "
-        "reads by separating them with a comma. e.g. 2,0")
+        "reads by separating them with a comma (e.g. 2,0)")
     trim_args.add_argument('-C', '--crop', metavar='INT,INT',
         type=get_list,
         help="trim to the specified size by removing bases from the end of "
         "the read. Different values can be provided for forward and reverse "
-        "reads by separating them with a comma. e.g 160,200")
+        "reads by separating them with a comma (e.g 160,200)")
     trim_args.add_argument('-L', '--leading', metavar='SCORE', 
         dest='lead_score',
         type=int,
