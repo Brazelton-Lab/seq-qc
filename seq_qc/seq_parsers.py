@@ -43,33 +43,63 @@ def fastq_parser(filehandle, line=None):
 
         yield data
 
-def fasta_parser(filehandle, line=None):
+
+def fasta_iter(handle, header=None):
+    """Iterate over FASTA file and return FASTA entries
+
+    :param handle: FASTA file handle
+    :type handle: File Object
+
+    :param header: Header line of entry to start iterating from
+    :type header: str
+
+    :return: dictionary containing FASTA data
+    :rtype: dict
+
+    @Alex Hyer
     """
-    Iterator over the given FASTA file handle, returning records.
-    """
-    if line is None:
-        line = filehandle.readline()
-    while line:
-        data = {}
 
-        if not line.startswith('>'):
-            raise IOError("Bad FASTA format: no '>' at beginning of line")
+    strip = str.strip  # Speed trick: reduces function calls
 
-        try:
-            data['identifier'], data['description'] = line[1:].strip().split(' ', 1)
-        except ValueError:  # No optional description
-            data['identifier'] = line[1:].strip()
-            data['description'] = ''
+    if header is None:
+        header = handle.next()  # Read first FASTA entry header
+    else:
+        header = header  # Set header to given header
 
-        # Collect sequence lines into a list
-        sequence = []
-        line = filehandle.readline()
-        while line and not line.startswith('>'):
-            sequence.append(line.strip())
-            line = filehandle.readline()
+    try:  # Manually construct a for loop to improve speed by using 'next'
 
-        data['sequence'] = ''.join(sequence)
+        while True:  # Loop until StopIteration Exception raised
+
+            line = handle.next()
+
+            data = []
+
+            if not header[0] == '>':
+                raise IOError('Bad FASTA format: no ">" at beginning of line')
+
+            header = strip(header)
+            try:
+                data['identifier'], data['description'] = strip(header)[1:].split(' ', 1)
+            except ValueError:  # No description
+                data['identifier'] = strip(header)[1:]
+                data['description'] = ''
+
+            # Collect sequence lines into a list
+            sequence_list = []
+            while line and not line[0] == '>':
+                sequence_list.append(strip(line))
+                line = handle.next()  # Raises StopIteration on last line
+            header = line  # Store current line so it's not lost next iteration
+
+            data['sequence'] = ''.join(sequence_list)
+            yield data
+
+    except StopIteration:
+        pass
+    finally:  # Yield last FASTA entry
+        data['sequence'] = ''.join(sequence_list)
         yield data
+
 
 def interleaved_parser(file_iter):
     """Read pairs from a stream (inspired by khmer).
