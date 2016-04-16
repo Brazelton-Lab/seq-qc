@@ -22,8 +22,8 @@ from __future__ import print_function
 from __future__ import division
 
 __author__ = "Christopher Thornton"
-__date__ = "2016-04-03"
-__version__ = "1.0.3"
+__date__ = "2016-04-15"
+__version__ = "1.0.7"
 
 import argparse
 import seq_io
@@ -76,6 +76,20 @@ def parse_sw_arg(argument):
 
     return (window, score)
 
+def get_list(argument):
+    try:
+        argument = [abs(int(i.lstrip())) for i in argument.split(",")]
+    except ValueError:
+        print("error: input to -c/--crop and -d/--headcrop must be in the "
+            "form INT or INT,INT")
+        sys.exit(1)
+    arglen = len(argument)
+    if arglen < 1 or arglen > 2:
+        print("error: one or two integer values should be provided with "
+            "-c/--crop or -h/--headcrop")
+        sys.exit(1)
+    return argument
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -106,9 +120,10 @@ def main():
         type=seq_io.open_output,
         help="output log file to keep track of trimmed sequences")
     parser.add_argument('-q', '--qual-type', metavar='TYPE', dest='qual_type',
-        default='phred33',
-        choices=['phred33', 'phred64'],
-        help="base quality encoding (phred33 or phred64) [default: phred33]")
+        default=33,
+        choices=[33, 64],
+        help="ASCII base quality score encoding [default: 33]. Options are "
+            "33 (for phred33) or 64 (for phred64)")
     parser.add_argument('-m', '--min-len', metavar='LEN', dest='minlen',
         type=int,
         default=0,
@@ -127,14 +142,16 @@ def main():
         "where 'qual_threshold' is an integer between 0 and 42 and "
         "'window_size' can either be length in bases or fraction of the total "
         "read length")
-    trim_args.add_argument('-H', '--headcrop', metavar='BASES',
-        type=int,
+    trim_args.add_argument('-H', '--headcrop', metavar='INT,INT',
+        type=get_list,
         help="remove exactly the number of bases specified from the start of "
-        "the read")
-    trim_args.add_argument('-C', '--crop', metavar='SIZE',
-        type=int,
+        "the read. Different values can be provided for forward and reverse "
+        "reads by separating them with a comma. e.g. 2,0")
+    trim_args.add_argument('-C', '--crop', metavar='INT,INT',
+        type=get_list,
         help="trim to the specified size by removing bases from the end of "
-        "the read")
+        "the read. Different values can be provided for forward and reverse "
+        "reads by separating them with a comma. e.g 160,200")
     trim_args.add_argument('-L', '--leading', metavar='SCORE', 
         dest='lead_score',
         type=int,
@@ -149,11 +166,7 @@ def main():
     args = parser.parse_args()
     all_args = sys.argv[1:]
 
-    if args.f_file == '-':
-        f_file = sys.stdin
-    else:
-        f_file = args.f_file
-
+    f_file = sys.stdin if args.f_file == '-' else args.f_file
     iterator = seq_io.get_iterator(f_file, args.r_file, args.interleaved)
 
     if args.r_file and not args.out_r:
@@ -186,12 +199,19 @@ def main():
         seq_io.logger(args.log, "Record\tForward length\tForward trimmed "
             "length\tReverse length\tReverse trimmed length\n")
 
+        try:
+            rcrop, lcrop = args.crop
+            rheadcrop, lheadcrop = args.headcrop
+        except ValueError:
+            rcrop = lcrop = args.crop[0]
+            rheadcrop = lheadcrop = args.headcrop[0]
+
         pairs_passed = discarded_pairs = fsingles = rsingles = 0
         for i, (forward, reverse) in enumerate(iterator):
             forward, flen, ftrim = apply_trimming(forward, trim_steps, 
-                args.qual_type, args.crop, args.headcrop, args.trunc_n)
+                args.qual_type, rcrop, rheadcrop, args.trunc_n)
             reverse, rlen, rtrim = apply_trimming(reverse, trim_steps, 
-                args.qual_type, args.crop, args.headcrop, args.trunc_n)
+                args.qual_type, lcrop, lheadcrop, args.trunc_n)
 
             # both good
             if ftrim >= args.minlen and rtrim >= args.minlen:
@@ -229,10 +249,13 @@ def main():
     else:
         seq_io.logger(args.log, "Record\tLength\tTrimmed length\n")
 
+        crop = args.crop[0]
+        headcrop = args.headcrop[0]
+
         discarded = 0
         for i, record in enumerate(iterator):
             record, seqlen, trimlen = apply_trimming(record, trim_steps, 
-                args.qual_type, args.crop, args.headcrop, args.trunc_n) 
+                args.qual_type, crop, headcrop, args.trunc_n) 
 
             if trimlen >= args.minlen:
                 writer(args.out_f, record)

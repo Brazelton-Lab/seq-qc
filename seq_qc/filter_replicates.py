@@ -21,7 +21,7 @@ from __future__ import division
 
 __author__ = "Christopher Thornton"
 __date__ = "2016-04-03"
-__version__ = "1.0.12"
+__version__ = "1.0.13"
 
 import argparse
 from array import array
@@ -56,7 +56,7 @@ def compare_seqs(query, template):
 def split_by_length(sequence, length):
     return sequence[:length], sequence[length:]
 
-def replicate_status(query_id, key, unique_db, search_db):
+def replicate_status(query_position, key, unique_db, search_db):
     """
     Check if record is a prefix or exact duplicate of another read in the \
     dataset. The function can also be used to check the prefix \
@@ -65,32 +65,32 @@ def replicate_status(query_id, key, unique_db, search_db):
     Returns the ID of the replicate, the ID of the template, and what type \
     of replicate was found.
     """
-    query = unique_db[query_id]
-    fquery, rquery = split_by_length(query[0], query[2])
+    query_record = unique_db[query_postion]
+    fquery, rquery = split_by_length(query_record[0], query_record[1])
 
     if key in search_db:
-        for search_id in search_db[key]:
+        for search_position in search_db[key]:
             try:
-                search = unique_db[search_id]
+                search_record = unique_db[search_position]
             # id deleted from uniques already, so skip
             except KeyError:
                 continue
-            fsearch, rsearch = split_by_length(search[0], search[2])
+            fsearch, rsearch = split_by_length(search_record[0], search_record[1])
             fstatus = compare_seqs(fquery, fsearch)
             # check forward read first. If it is a duplicate then check reverse
             if fstatus:
                 rstatus = compare_seqs(rquery, rsearch)
                 if rstatus:
                     if (fstatus == 1 and rstatus == 1):
-                        return (query_id, search_id, 'exact')
+                        return (query_position, search_position, 'exact')
                     elif (fstatus == 1 and rstatus == 3) or \
                         (fstatus == 3 and rstatus == 1) or \
                         (fstatus == 3 and rstatus == 3):
-                        return (query_id, search_id, 'prefix')
+                        return (query_position, search_position, 'prefix')
                     elif (fstatus == 1 and rstatus == 2) or \
                         (fstatus == 2 and rstatus == 1) or \
                         (fstatus == 2 and rstatus == 2):
-                        return (search_id, query_id, 'prefix')
+                        return (search_position, query_position, 'prefix')
 
     return (None, None, None)
 
@@ -129,15 +129,11 @@ def main():
     args = parser.parse_args()
     all_args = sys.argv[1:]
 
-    if args.f_file == '-':
-        f_file = sys.stdin
-    else:
-        f_file = args.f_file
-
     if args.r_file and not args.out_r:
         parser.error("argument -v/--out-reverse is required when an input "
             "reverse file is provided")
 
+    f_file = sys.stdin if args.f_file == '-' else args.f_file
     iterator = seq_io.get_iterator(f_file, args.r_file, args.interleaved)
 
     seq_io.logger(args.log, "Replicate\tTemplate\tType\n")
@@ -157,20 +153,19 @@ def main():
 
         flen, rlen = len(fseq), len(rseq)
 
-        uniques[ident] = (fseq + rseq, fqual + rqual, flen)
+        uniques[i] = (fseq + rseq, flen, fqual + rqual, ident)
 
         fsubsize, rsubsize = ((20, 20) if args.prefix else (flen, rlen))
         key = hashlib.md5(fseq[:fsubsize] + rseq[:rsubsize]).digest()
 
-        dup_id, dup_temp, dup_type = replicate_status(ident, key, 
-            uniques, seq_db)
+        dup_pos, temp_pos, dup_type = replicate_status(i, key, uniques, seq_qb)
 
         # match to database found, so delete id from database of uniques
-        if dup_id:
-            seq_io.logger(args.log, "{}\t{}\t{}\n".format(dup_id, dup_temp,
-                dup_type))
+        if dup_pos:
+            seq_io.logger(args.log, "{}\t{}\t{}\n".format(uniques[dup_pos][3], 
+                uniques[temp_pos][3], dup_type))
             try:
-                del uniques[dup_id]
+                del uniques[dup_pos]
             except KeyError:
                 print("input file has more than one sequence with the same "
                     "identifier", sys.stderr)
@@ -181,14 +176,14 @@ def main():
         if args.rev_comp:
             f_rc, r_rc = pairs.reverse_complement_paired(fseq, rseq)
             rckey = hashlib.md5(f_rc[:fsubsize] + r_rc[:rsubsize]).digest()
-            dup_id, dup_temp, dup_type = replicate_status(ident, rckey, 
-                uniques, seq_db)
-            if dup_id:
+            dup_pos, temp_pos, dup_type = replicate_status(i, rckey,  uniques,
+                seq_db)
+            if dup_pos:
                 dup_type = 'rev-comp ' + dup_type
-                seq_io.logger(args.log, "{}\t{}\t{}\n".format(dup_id, dup_temp,
-                    dup_type))
+                seq_io.logger(args.log, "{}\t{}\t{}\n".format(
+                    uniques[dup_pos][3], uniques[temp_pos][3], dup_type))
                 try:
-                    del uniques[dup_id]
+                    del uniques[dup_pos]
                 except KeyError:
                     print("input file has more than one sequence with the same "
                         "identifier", sys.stderr)
@@ -198,19 +193,20 @@ def main():
         # record is definitely not a duplicate, so add to database of ids to 
         # check a match for
         try:
-            seq_db[key].append(ident)
+            seq_db[key].append(i)
         except KeyError:
-            seq_db[key] = [ident]
+            seq_db[key] = [i]
 
     i += 1
 
     if args.interleaved:
         args.out_r = args.out_f
 
-    for j, ident in enumerate(uniques):
-        record = uniques[ident]
-        fseq, rseq = split_by_length(record[0], record[2])
-        fqual, rqual = split_by_length(record[1], record[2])
+    for j, i in enumerate(sorted(uniques.keys())):
+        record = uniques[i]
+        ident = record[3]
+        fseq, rseq = split_by_length(record[0], record[1])
+        fqual, rqual = split_by_length(record[2], record[1])
         writer(args.out_f, {'identifier': ident, 'description': fdesc, 'sequence': fseq, 'quality': fqual})
         writer(args.out_r, {'identifier': ident, 'description': rdesc, 'sequence': rseq, 'quality': rqual})
 
