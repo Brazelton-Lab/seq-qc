@@ -32,8 +32,8 @@ from __future__ import print_function
 from __future__ import division
 
 __author__ = "Christopher Thornton"
-__date__ = "2016-04-07"
-__version__ = "0.1.0"
+__date__ = "2016-04-25"
+__version__ = "0.1.1"
 
 import argparse
 import math
@@ -208,6 +208,9 @@ def main():
         type=float, default=0.01,
         help="maximum divergence of the observed sequence from the template "
             "due to sequencing error [default: 0.01]")
+    parser.add_argument('--version',
+        action='version',
+        version='%(prog)s ' + __version__)
 
     args = parser.parse_args()
     all_args = sys.argv[1:]
