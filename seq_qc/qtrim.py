@@ -22,8 +22,8 @@ from __future__ import print_function
 from __future__ import division
 
 __author__ = "Christopher Thornton"
-__date__ = "2016-04-15"
-__version__ = "1.0.9"
+__date__ = "2016-04-25"
+__version__ = "1.0.10"
 
 import argparse
 import seq_io
@@ -163,6 +163,9 @@ def main():
     trim_args.add_argument('--trunc-n', dest='trunc_n',
         action='store_true',
         help="truncate sequence at position of first ambiguous base")
+    parser.add_argument('--version',
+        action='version',
+        version='%(prog)s ' + __version__)
     args = parser.parse_args()
     all_args = sys.argv[1:]
 

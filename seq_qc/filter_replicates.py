@@ -20,8 +20,8 @@ from __future__ import print_function
 from __future__ import division
 
 __author__ = "Christopher Thornton"
-__date__ = "2016-04-03"
-__version__ = "1.0.14"
+__date__ = "2016-04-25"
+__version__ = "1.0.15"
 
 import argparse
 from array import array
@@ -126,6 +126,9 @@ def main():
     dup_args.add_argument('--rev-comp', dest='rev_comp',
         action='store_true',
         help="replicate can be the reverse-complement of another read")
+    parser.add_argument('--version',
+        action='version',
+        version='%(prog)s ' + __version__)
     args = parser.parse_args()
     all_args = sys.argv[1:]
 
