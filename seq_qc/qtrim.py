@@ -23,7 +23,7 @@ from __future__ import division
 
 __author__ = "Christopher Thornton"
 __date__ = "2016-04-15"
-__version__ = "1.0.7"
+__version__ = "1.0.9"
 
 import argparse
 import seq_io
@@ -166,6 +166,19 @@ def main():
     args = parser.parse_args()
     all_args = sys.argv[1:]
 
+    try:
+        rcrop, lcrop = args.crop
+    except ValueError:
+        rcrop = lcrop = args.crop[0]
+    except TypeError:
+        rcrop = lcrop = None
+    try:
+        rheadcrop, lheadcrop = args.headcrop
+    except ValueError:
+        rheadcrop = lheadcrop = args.headcrop[0]
+    except TypeError:
+        rheadcrop = lheadcrop = None
+
     f_file = sys.stdin if args.f_file == '-' else args.f_file
     iterator = seq_io.get_iterator(f_file, args.r_file, args.interleaved)
 
@@ -199,13 +212,6 @@ def main():
         seq_io.logger(args.log, "Record\tForward length\tForward trimmed "
             "length\tReverse length\tReverse trimmed length\n")
 
-        try:
-            rcrop, lcrop = args.crop
-            rheadcrop, lheadcrop = args.headcrop
-        except ValueError:
-            rcrop = lcrop = args.crop[0]
-            rheadcrop = lheadcrop = args.headcrop[0]
-
         pairs_passed = discarded_pairs = fsingles = rsingles = 0
         for i, (forward, reverse) in enumerate(iterator):
             forward, flen, ftrim = apply_trimming(forward, trim_steps, 
@@ -233,7 +239,10 @@ def main():
             seq_io.logger(args.log, "{}\t{}\t{}\t{}\t{}\n"
                 .format(forward['identifier'], flen, ftrim, rlen, rtrim))
 
-        i += 1
+        try:
+            i += 1
+        except UnboundLocalError:
+            seq_io.print_error("error: no sequences were found to process")
 
         seq_io.program_info('qtrim', all_args, __version__)
         total = i * 2
@@ -249,13 +258,10 @@ def main():
     else:
         seq_io.logger(args.log, "Record\tLength\tTrimmed length\n")
 
-        crop = args.crop[0]
-        headcrop = args.headcrop[0]
-
         discarded = 0
         for i, record in enumerate(iterator):
             record, seqlen, trimlen = apply_trimming(record, trim_steps, 
-                args.qual_type, crop, headcrop, args.trunc_n) 
+                args.qual_type, rcrop, rheadcrop, args.trunc_n) 
 
             if trimlen >= args.minlen:
                 writer(args.out_f, record)
@@ -265,7 +271,10 @@ def main():
             seq_io.logger(args.log, "{}\t{}\t{}\n".format(record['identifier'],
                 seqlen, trimlen))
 
-        i += 1
+        try:
+            i += 1
+        except UnboundLocalError:
+            seq_io.print_error("error: no sequences were found to process")
  
         seq_io.program_info('qtrim', all_args, __version__)
         passed = i - discarded
