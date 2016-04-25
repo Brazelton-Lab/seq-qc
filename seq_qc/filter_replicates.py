@@ -21,7 +21,7 @@ from __future__ import division
 
 __author__ = "Christopher Thornton"
 __date__ = "2016-04-03"
-__version__ = "1.0.13"
+__version__ = "1.0.14"
 
 import argparse
 from array import array
@@ -65,7 +65,7 @@ def replicate_status(query_position, key, unique_db, search_db):
     Returns the ID of the replicate, the ID of the template, and what type \
     of replicate was found.
     """
-    query_record = unique_db[query_postion]
+    query_record = unique_db[query_position]
     fquery, rquery = split_by_length(query_record[0], query_record[1])
 
     if key in search_db:
@@ -158,7 +158,7 @@ def main():
         fsubsize, rsubsize = ((20, 20) if args.prefix else (flen, rlen))
         key = hashlib.md5(fseq[:fsubsize] + rseq[:rsubsize]).digest()
 
-        dup_pos, temp_pos, dup_type = replicate_status(i, key, uniques, seq_qb)
+        dup_pos, temp_pos, dup_type = replicate_status(i, key, uniques, seq_db)
 
         # match to database found, so delete id from database of uniques
         if dup_pos:
