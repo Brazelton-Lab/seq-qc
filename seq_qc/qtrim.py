@@ -23,7 +23,7 @@ from __future__ import division
 
 __author__ = "Christopher Thornton"
 __date__ = "2016-04-25"
-__version__ = "1.0.10"
+__version__ = "1.0.11"
 
 import argparse
 import seq_io
@@ -121,6 +121,7 @@ def main():
         help="output log file to keep track of trimmed sequences")
     parser.add_argument('-q', '--qual-type', metavar='TYPE', dest='qual_type',
         default=33,
+        type=int,
         choices=[33, 64],
         help="ASCII base quality score encoding [default: 33]. Options are "
             "33 (for phred33) or 64 (for phred64)")
