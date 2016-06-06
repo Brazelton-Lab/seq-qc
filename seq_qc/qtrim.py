@@ -80,13 +80,13 @@ def get_list(argument):
     try:
         argument = [abs(int(i.lstrip())) for i in argument.split(",")]
     except ValueError:
-        print("error: input to -c/--crop and -d/--headcrop must be in the "
-            "form INT or INT,INT")
+        print("error: input to -c/--crop, -d/--headcrop, and -m/--min-len must "
+            "be in the form INT or INT,INT")
         sys.exit(1)
     arglen = len(argument)
     if arglen < 1 or arglen > 2:
         print("error: one or two integer values should be provided with "
-            "-c/--crop or -h/--headcrop")
+            "-c/--crop, -h/--headcrop, and -m/--min-len")
         sys.exit(1)
     return argument
 
@@ -181,9 +181,9 @@ def main():
     except TypeError:
         fheadcrop = rheadcrop = None
     try:
-        fminlen, rminlen = args.headcrop
+        fminlen, rminlen = args.minlen
     except ValueError:
-        fminlen = rminlen = args.headcrop[0]
+        fminlen = rminlen = args.minlen[0]
     except TypeError:
         fminlen = rminlen = 0
 
