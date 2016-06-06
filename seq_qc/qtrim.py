@@ -22,8 +22,8 @@ from __future__ import print_function
 from __future__ import division
 
 __author__ = "Christopher Thornton"
-__date__ = "2016-04-25"
-__version__ = "1.0.11"
+__date__ = "2016-06-06"
+__version__ = "1.1.1"
 
 import argparse
 import seq_io
@@ -126,7 +126,9 @@ def main():
             "33 (for phred33) or 64 (for phred64)")
     parser.add_argument('-m', '--min-len', metavar='LEN', dest='minlen',
         type=get_list,
-        help="filter reads shorter than the threshold [default: 0]")
+        help="filter reads shorter than the minimum length threshold "
+        "[default: 0,0]. Different values can be provided for the forward and "
+        "reverse reads by separating them with a comma (e.g. 80,60)")
     trim_args = parser.add_argument_group('trimming options')
     trim_args.add_argument('-O', '--trim-order', metavar='ORDER',
         dest='trim_order',
@@ -144,13 +146,13 @@ def main():
     trim_args.add_argument('-H', '--headcrop', metavar='INT,INT',
         type=get_list,
         help="remove exactly the number of bases specified from the start of "
-        "the read. Different values can be provided for forward and reverse "
-        "reads by separating them with a comma (e.g. 2,0)")
+        "the read. Different values can be provided for the forward and "
+        "reverse reads by separating them with a comma (e.g. 2,0)")
     trim_args.add_argument('-C', '--crop', metavar='INT,INT',
         type=get_list,
         help="trim to the specified size by removing bases from the end of "
-        "the read. Different values can be provided for forward and reverse "
-        "reads by separating them with a comma (e.g 160,200)")
+        "the read. Different values can be provided for the forward and "
+        "reverse reads by separating them with a comma (e.g 160,200)")
     trim_args.add_argument('-L', '--leading', metavar='SCORE', 
         dest='lead_score',
         type=int,

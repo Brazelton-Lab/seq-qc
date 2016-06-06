@@ -32,8 +32,8 @@ from __future__ import print_function
 from __future__ import division
 
 __author__ = "Christopher Thornton"
-__date__ = "2016-04-25"
-__version__ = "0.1.1"
+__date__ = "2016-06-06"
+__version__ = "0.2.1"
 
 import argparse
 import math
