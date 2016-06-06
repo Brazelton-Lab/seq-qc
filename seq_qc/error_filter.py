@@ -234,6 +234,7 @@ def main():
         fheader, fsequence = ("{} {}".format(forward['identifier'], 
             forward['description']), crop_string(forward['sequence'], 
             args.crop[0], args.headcrop[0]))
+        forward['sequence'] = fsequence
         fquals = [ord(j) - args.qual_type for j in crop_string(
             forward['quality'], args.crop[0], args.headcrop[0])]
         flen = len(fsequence)
@@ -242,6 +243,7 @@ def main():
         rheader, rsequence = ("{} {}".format(reverse['identifier'], 
             reverse['description']), crop_string(reverse['sequence'], 
             args.crop[1], args.headcrop[1]))
+        reverse['sequence'] = rsequence
         rlen = len(rsequence)
         rquals = [ord(j) - args.qual_type for j in crop_string(
             reverse['quality'], args.crop[1], args.headcrop[1])]
