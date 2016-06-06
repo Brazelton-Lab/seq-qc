@@ -21,7 +21,7 @@ from __future__ import division
 
 __author__ = "Christopher Thornton"
 __date__ = "2016-04-25"
-__version__ = "1.0.15"
+__version__ = "1.0.16"
 
 import argparse
 from array import array
