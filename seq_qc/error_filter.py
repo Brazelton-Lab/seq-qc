@@ -71,18 +71,19 @@ def get_list(argument):
         sys.exit(1)
     return argument
 
-def crop_string(sequence, trunc=None, headcrop=None):
+def crop_string(record, trunc=None, headcrop=None):
     if not headcrop:
         start = 0
     else:
         start = headcrop
-
     if not trunc:
         end = seqlen
     else:
         end = trunc
 
-    return sequence[start: end]
+    record['sequence'] = record['sequence'][start: end]
+    record['quality'] = record['quality'][start: end]
+    return record
 
 def calculate_errors_poisson(sequence, quals, alpha):
     """
@@ -244,25 +245,17 @@ def main():
 
     pairs_passed = filtered_pairs = fsingles = rsingles = 0
     for i, (forward, reverse) in enumerate(iterator):
-        fheader, fsequence = ("{} {}".format(forward['identifier'], 
-            forward['description']), crop_string(forward['sequence'], 
-            fcrop, fheadcrop))
-        forward['sequence'] = fsequence
-        fquals = [ord(j) - args.qual_type for j in crop_string(
-            forward['quality'], fcrop, fheadcrop)]
-        forward['quality'] = fquals
-        flen = len(fsequence)
-        fee, fNs = error_func[args.error_calc](fsequence, fquals, args.alpha)
+        forward = crop_string(forward, fcrop, fheadcrop)
+        fheader = "{} {}".format(forward['identifier'], forward['description'])
+        fquals = [ord(j) - args.qual_type for j in forward['quality']]
+        flen = len(forward['sequence'])
+        fee, fNs = error_func[args.error_calc](forward['sequence'], fquals, args.alpha)
 
-        rheader, rsequence = ("{} {}".format(reverse['identifier'], 
-            reverse['description']), crop_string(reverse['sequence'], 
-            rcrop, rheadcrop))
-        reverse['sequence'] = rsequence
-        rlen = len(rsequence)
-        rquals = [ord(j) - args.qual_type for j in crop_string(
-            reverse['quality'], rcrop, rheadcrop)]
-        reverse['quality'] = rquals
-        ree, rNs = error_func[args.error_calc](rsequence, rquals, args.alpha)
+        reverse = crop_string(reverse, rcrop, rheadcrop)
+        rheader = "{} {}".format(reverse['identifier'], reverse['description'])
+        rquals = [ord(j) - args.qual_type for j in reverse['quality']]
+        rlen = len(reverse['sequence'])
+        ree, rNs = error_func[args.error_calc](reverse['sequence'], rquals, args.alpha)
 
         if args.maxerror:
             fthreshold = rthreshold = args.maxerror
