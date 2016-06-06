@@ -125,8 +125,7 @@ def main():
         help="ASCII base quality score encoding [default: 33]. Options are "
             "33 (for phred33) or 64 (for phred64)")
     parser.add_argument('-m', '--min-len', metavar='LEN', dest='minlen',
-        type=int,
-        default=0,
+        type=get_list,
         help="filter reads shorter than the threshold [default: 0]")
     trim_args = parser.add_argument_group('trimming options')
     trim_args.add_argument('-O', '--trim-order', metavar='ORDER',
@@ -170,17 +169,23 @@ def main():
     all_args = sys.argv[1:]
 
     try:
-        rcrop, lcrop = args.crop
+        fcrop, rcrop = args.crop
     except ValueError:
-        rcrop = lcrop = args.crop[0]
+        fcrop = rcrop = args.crop[0]
     except TypeError:
-        rcrop = lcrop = None
+        fcrop = rcrop = None
     try:
-        rheadcrop, lheadcrop = args.headcrop
+        fheadcrop, rheadcrop = args.headcrop
     except ValueError:
-        rheadcrop = lheadcrop = args.headcrop[0]
+        fheadcrop = rheadcrop = args.headcrop[0]
     except TypeError:
-        rheadcrop = lheadcrop = None
+        fheadcrop = rheadcrop = None
+    try:
+        fminlen, rminlen = args.headcrop
+    except ValueError:
+        fminlen = rminlen = args.headcrop[0]
+    except TypeError:
+        fminlen = rminlen = 0
 
     f_file = sys.stdin if args.f_file == '-' else args.f_file
     iterator = seq_io.get_iterator(f_file, args.r_file, args.interleaved)
@@ -218,21 +223,21 @@ def main():
         pairs_passed = discarded_pairs = fsingles = rsingles = 0
         for i, (forward, reverse) in enumerate(iterator):
             forward, flen, ftrim = apply_trimming(forward, trim_steps, 
-                args.qual_type, rcrop, rheadcrop, args.trunc_n)
+                args.qual_type, fcrop, fheadcrop, args.trunc_n)
             reverse, rlen, rtrim = apply_trimming(reverse, trim_steps, 
-                args.qual_type, lcrop, lheadcrop, args.trunc_n)
+                args.qual_type, rcrop, rheadcrop, args.trunc_n)
 
             # both good
-            if ftrim >= args.minlen and rtrim >= args.minlen:
+            if ftrim >= fminlen and rtrim >= rminlen:
                 pairs_passed += 1
                 writer(args.out_f, forward)
                 writer(args.out_r, reverse)
             # forward orphaned, reverse filtered
-            elif ftrim >= args.minlen and rtrim < args.minlen:
+            elif ftrim >= fminlen and rtrim < rminlen:
                 fsingles += 1
                 writer(args.out_s, forward)
             # reverse orphaned, forward filtered
-            elif ftrim < args.minlen and rtrim >= args.minlen:
+            elif ftrim < fminlen and rtrim >= rminlen:
                 rsingles += 1
                 writer(args.out_s, reverse)
             # both discarded
