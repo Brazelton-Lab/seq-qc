@@ -200,7 +200,10 @@ def main():
         except KeyError:
             seq_db[key] = [i]
 
-    i += 1
+    try:
+        i += 1
+    except UnboundLocalError:
+        seq_io.print_error("error: no sequences were found to process")
 
     if args.interleaved:
         args.out_r = args.out_f
