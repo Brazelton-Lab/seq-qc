@@ -250,6 +250,7 @@ def main():
         forward['sequence'] = fsequence
         fquals = [ord(j) - args.qual_type for j in crop_string(
             forward['quality'], fcrop, fheadcrop)]
+        forward['quality'] = fquals
         flen = len(fsequence)
         fee, fNs = error_func[args.error_calc](fsequence, fquals, args.alpha)
 
@@ -260,6 +261,7 @@ def main():
         rlen = len(rsequence)
         rquals = [ord(j) - args.qual_type for j in crop_string(
             reverse['quality'], rcrop, rheadcrop)]
+        reverse['quality'] = rquals
         ree, rNs = error_func[args.error_calc](rsequence, rquals, args.alpha)
 
         if args.maxerror:
