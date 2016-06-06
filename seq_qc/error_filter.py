@@ -276,7 +276,12 @@ def main():
             seq_io.logger(args.log, "{}\terrors={!s}\n{}\terrors={!s}".format(
                 fheader, fee, rheader, ree))
 
-    i += 1
+    try:
+        i += 1
+    except UnboundLocalError:
+        seq_io.print_error("error: no sequences were found to process")
+
+    seq_io.program_info('error_filter', all_args, __version__)
     total = i * 2
     passed = pairs_passed * 2 + fsingles + rsingles
     print("\nRecords processed:\t{!s} ({!s} pairs)\nPassed filtering:\t"
