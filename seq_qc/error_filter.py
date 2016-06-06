@@ -182,12 +182,12 @@ def main():
         type=float, default=0.005,
         help="probability of underestimating the actual number of errors in a "
             "sequence [default: 0.005]")
-    parser.add_argument('-c', '--crop', metavar='"LEN, LEN"',
-        type=get_list, default="0, 0",
+    parser.add_argument('-c', '--crop', metavar='LEN,LEN',
+        type=get_list,
         help="trim read to size specified by removing bases from the end of "
             "the read")
-    parser.add_argument('-d', '--headcrop', metavar='"LEN, LEN"',
-        type=get_list, default="0, 0",
+    parser.add_argument('-d', '--headcrop', metavar='LEN,LEN',
+        type=get_list,
         help="trim of bases from the start of the read")
     parser.add_argument('--ambig',
         action='store_true',
@@ -211,6 +211,19 @@ def main():
     args = parser.parse_args()
     all_args = sys.argv[1:]
 
+    try:
+        fcrop, rcrop = args.crop
+    except ValueError:
+        fcrop = rcrop = args.crop[0]
+    except TypeError:
+        fcrop = rcrop = None
+    try:
+        fheadcrop, rheadcrop = args.headcrop
+    except ValueError:
+        fheadcrop = rheadcrop = args.headcrop[0]
+    except TypeError:
+        fheadcrop = rheadcrop = None
+
     f_file = sys.stdin if args.f_file == '-' else args.f_file
     iterator = seq_io.get_iterator(f_file, args.r_file, args.interleaved)
 
@@ -233,20 +246,20 @@ def main():
     for i, (forward, reverse) in enumerate(iterator):
         fheader, fsequence = ("{} {}".format(forward['identifier'], 
             forward['description']), crop_string(forward['sequence'], 
-            args.crop[0], args.headcrop[0]))
+            fcrop, fheadcrop))
         forward['sequence'] = fsequence
         fquals = [ord(j) - args.qual_type for j in crop_string(
-            forward['quality'], args.crop[0], args.headcrop[0])]
+            forward['quality'], fcrop, fheadcrop)]
         flen = len(fsequence)
         fee, fNs = error_func[args.error_calc](fsequence, fquals, args.alpha)
 
         rheader, rsequence = ("{} {}".format(reverse['identifier'], 
             reverse['description']), crop_string(reverse['sequence'], 
-            args.crop[1], args.headcrop[1]))
+            rcrop, rheadcrop))
         reverse['sequence'] = rsequence
         rlen = len(rsequence)
         rquals = [ord(j) - args.qual_type for j in crop_string(
-            reverse['quality'], args.crop[1], args.headcrop[1])]
+            reverse['quality'], rcrop, rheadcrop)]
         ree, rNs = error_func[args.error_calc](rsequence, rquals, args.alpha)
 
         if args.maxerror:
