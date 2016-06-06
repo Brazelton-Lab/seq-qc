@@ -120,8 +120,7 @@ def main():
         type=seq_io.open_output,
         help="output log file to keep track of trimmed sequences")
     parser.add_argument('-q', '--qual-type', metavar='TYPE', dest='qual_type',
-        default=33,
-        type=int,
+        type=int, default=33,
         choices=[33, 64],
         help="ASCII base quality score encoding [default: 33]. Options are "
             "33 (for phred33) or 64 (for phred64)")

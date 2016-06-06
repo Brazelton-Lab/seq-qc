@@ -72,20 +72,16 @@ def get_list(argument):
     return argument
 
 def crop_string(sequence, trunc=None, headcrop=None):
-    seqlen = len(sequence)
     if not headcrop:
-        start = 0
-    elif headcrop > seqlen:
         start = 0
     else:
         start = headcrop
 
     if not trunc:
         end = seqlen
-    elif trunc and trunc > seqlen:
-        end = seqlen
     else:
         end = trunc
+
     return sequence[start: end]
 
 def calculate_errors_poisson(sequence, quals, alpha):
