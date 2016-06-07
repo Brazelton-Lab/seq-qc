@@ -192,14 +192,15 @@ def main():
         help="trim of bases from the start of the read")
     parser.add_argument('--ambig',
         action='store_true',
-        help="Remove sequences with ambiguous bases. Default is to treat "
+        help="remove sequences with ambiguous bases. Default is to treat "
             "ambiguous bases as errors")
     parser.add_argument('-e', '--error-calc',
-        choices = ('poisson_binomial', 'poisson'),
-        help="")
+        choices = ('poisson_binomial', 'poisson'), default="poisson_binomial",
+        help="method to use for calculating the number of errors expected in "
+        "a sequence [default: poisson_binomial]")
     filter_mode = parser.add_mutually_exclusive_group()
-    filter_mode.add_argument('-m', '--max-error', dest='maxerror',
-        type=float,
+    filter_mode.add_argument('-m', '--max-errors', dest='maxerror',
+        type=float, default=1.0,
         help="maximum number of errors allowed in a sequence [default: 1]")
     filter_mode.add_argument('-u', '--uncert', 
         type=float, default=0.01,
