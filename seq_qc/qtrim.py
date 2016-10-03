@@ -23,7 +23,7 @@ from __future__ import division
 
 __author__ = "Christopher Thornton"
 __date__ = "2016-06-06"
-__version__ = "1.1.1"
+__version__ = "1.1.5"
 
 import argparse
 import seq_io
@@ -40,10 +40,12 @@ def apply_trimming(record, steps, qual_type, crop=None, headcrop=None,
         seq, qual = (seq[:crop], qual[:crop])
     if headcrop:
         seq, qual = (seq[headcrop:], qual[headcrop:])
+    oldlen = len(seq)
 
     for step, value in steps:
         start, end = step(qual, value, qual_type)
         seq, qual = (seq[start: end], qual[start: end])
+        oldlen = len(seq)
 
     if trunc:
         start, end = trim.trunc_n(seq)
@@ -192,6 +194,8 @@ def main():
     f_file = sys.stdin if args.f_file == '-' else args.f_file
     iterator = seq_io.get_iterator(f_file, args.r_file, args.interleaved)
 
+    seq_io.program_info('qtrim', all_args, __version__)
+
     if args.r_file and not args.out_r:
         parser.error("argument -v/--out-reverse is required when a reverse "
             "file is provided")
@@ -214,8 +218,9 @@ def main():
         writer = seq_io.fastq_writer
 
     paired = True if (args.interleaved or args.r_file) else False
-
+ 
     if paired:
+        print("\nProcessing input as paired-end reads", file=sys.stderr)
         if args.interleaved:
             args.out_r = args.out_f
 
@@ -254,7 +259,6 @@ def main():
         except UnboundLocalError:
             seq_io.print_error("error: no sequences were found to process")
 
-        seq_io.program_info('qtrim', all_args, __version__)
         total = i * 2
         passed = pairs_passed * 2 + fsingles + rsingles
         print("\nRecords processed:\t{!s} ({!s} pairs)\nPassed filtering:\t"
@@ -266,14 +270,16 @@ def main():
             discarded_pairs, discarded_pairs / i), file=sys.stderr)
 
     else:
+        print("\nProcessing input as single-end reads", file=sys.stderr)
         seq_io.logger(args.log, "Record\tLength\tTrimmed length\n")
 
         discarded = 0
+
         for i, record in enumerate(iterator):
             record, seqlen, trimlen = apply_trimming(record, trim_steps, 
-                args.qual_type, rcrop, rheadcrop, args.trunc_n) 
-
-            if trimlen >= args.minlen:
+                args.qual_type, rcrop, rheadcrop, args.trunc_n)
+            
+            if trimlen >= rminlen:
                 writer(args.out_f, record)
             else:
                 discarded += 1
@@ -286,7 +292,6 @@ def main():
         except UnboundLocalError:
             seq_io.print_error("error: no sequences were found to process")
  
-        seq_io.program_info('qtrim', all_args, __version__)
         passed = i - discarded
         print("\nRecords processed:\t{!s}\nPassed filtering:\t{!s} "
         "({:.2%})\nRecords discarded:\t{!s} ({:.2%})\n".format(i, passed,
