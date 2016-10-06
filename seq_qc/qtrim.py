@@ -22,8 +22,8 @@ from __future__ import print_function
 from __future__ import division
 
 __author__ = "Christopher Thornton"
-__date__ = "2016-06-06"
-__version__ = "1.1.5"
+__date__ = "2016-10-06"
+__version__ = "1.2.0"
 
 import argparse
 import seq_io
@@ -103,6 +103,10 @@ def main():
     input_arg.add_argument('--interleaved',
         action='store_true',
         help="input is interleaved paired-end reads")
+    input_arg.add_argument('--force',
+        action='store_true',
+        help="force process as single-end reads even if input is interleaved "
+        "paired-end reads")
     input_arg.add_argument('r_file', metavar='in2.fastq', nargs='?',
         help="input reverse reads in fastq format")
     parser.add_argument('-o', '--out', metavar='FILE', dest='out_f',
@@ -111,8 +115,8 @@ def main():
     parser.add_argument('-v', '--out-reverse', metavar='FILE', dest='out_r',
         type=seq_io.open_output,
         help="output trimmed reverse reads")
-    parser.add_argument('-s', '--singles', metavar='FILE', dest='out_s',
-        type=seq_io.open_output,
+    parser.add_argument('-s', '--singles', metavar='FILE', dest='singles',
+        type=str,
         help="output trimmed orphaned reads")
     parser.add_argument('-f', '--out-format', metavar='FORMAT', 
         dest='out_format', default='fastq',
@@ -221,11 +225,12 @@ def main():
  
     if paired:
         print("\nProcessing input as paired-end reads", file=sys.stderr)
-        if args.interleaved:
-            args.out_r = args.out_f
-
         seq_io.logger(args.log, "Record\tForward length\tForward trimmed "
             "length\tReverse length\tReverse trimmed length\n")
+
+        out_f = args.out_f
+        out_s = seq_io.open_output(args.singles) if args.singles else None
+        out_r = args.out_f if args.interleaved else args.out_r
 
         pairs_passed = discarded_pairs = fsingles = rsingles = 0
         for i, (forward, reverse) in enumerate(iterator):
@@ -237,16 +242,16 @@ def main():
             # both good
             if ftrim >= fminlen and rtrim >= rminlen:
                 pairs_passed += 1
-                writer(args.out_f, forward)
-                writer(args.out_r, reverse)
+                writer(out_f, forward)
+                writer(out_r, reverse)
             # forward orphaned, reverse filtered
             elif ftrim >= fminlen and rtrim < rminlen:
                 fsingles += 1
-                writer(args.out_s, forward)
+                writer(out_s, forward)
             # reverse orphaned, forward filtered
             elif ftrim < fminlen and rtrim >= rminlen:
                 rsingles += 1
-                writer(args.out_s, reverse)
+                writer(out_s, reverse)
             # both discarded
             else:
                 discarded_pairs += 1
@@ -273,9 +278,21 @@ def main():
         print("\nProcessing input as single-end reads", file=sys.stderr)
         seq_io.logger(args.log, "Record\tLength\tTrimmed length\n")
 
-        discarded = 0
+        if args.singles:
+            print("\nwarning: argument --singles used with single-end reads"
+                "... ignoring\n", file=sys.stderr)
 
+        discarded = 0
         for i, record in enumerate(iterator):
+            if i == 0:
+                first_read = record['identifier']
+            elif i == 1:
+                if first_read == record['identifier'] and not args.force:
+                    seq_io.print_error("warning: the input fasta appears to "
+                        "contain interleaved paired-end reads. Please run with "
+                        "the --force flag to proceed with processing the data "
+                        "as single-end reads")
+
             record, seqlen, trimlen = apply_trimming(record, trim_steps, 
                 args.qual_type, rcrop, rheadcrop, args.trunc_n)
             
