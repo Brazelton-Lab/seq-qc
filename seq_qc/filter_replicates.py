@@ -20,8 +20,8 @@ from __future__ import print_function
 from __future__ import division
 
 __author__ = "Christopher Thornton"
-__date__ = "2016-04-25"
-__version__ = "1.0.16"
+__date__ = "2016-10-28"
+__version__ = "1.0.17"
 
 import argparse
 from array import array

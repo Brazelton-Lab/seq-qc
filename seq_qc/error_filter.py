@@ -32,8 +32,8 @@ from __future__ import print_function
 from __future__ import division
 
 __author__ = "Christopher Thornton"
-__date__ = "2016-06-06"
-__version__ = "0.2.1"
+__date__ = "2016-10-28"
+__version__ = "0.2.2"
 
 import argparse
 import math
@@ -212,6 +212,7 @@ def main():
 
     args = parser.parse_args()
     all_args = sys.argv[1:]
+    seq_io.program_info('error_filter', all_args, __version__)
 
     try:
         fcrop, rcrop = args.crop
@@ -290,7 +291,6 @@ def main():
     except UnboundLocalError:
         seq_io.print_error("error: no sequences were found to process")
 
-    seq_io.program_info('error_filter', all_args, __version__)
     total = i * 2
     passed = pairs_passed * 2 + fsingles + rsingles
     print("\nRecords processed:\t{!s} ({!s} pairs)\nPassed filtering:\t"
