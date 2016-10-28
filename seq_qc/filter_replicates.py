@@ -131,6 +131,7 @@ def main():
         version='%(prog)s ' + __version__)
     args = parser.parse_args()
     all_args = sys.argv[1:]
+    seq_io.program_info('filter_replicates', all_args, __version__)
 
     if args.r_file and not args.out_r:
         parser.error("argument -v/--out-reverse is required when an input "
@@ -218,7 +219,6 @@ def main():
 
     j += 1
 
-    seq_io.program_info('filter_replicates', all_args, __version__)
     num_reps = i - j
     print("\nRead Pairs processed:\t{!s}\nReplicates found:\t{!s} "
         "({:.2%})\n".format(i, num_reps, num_reps / i), file=sys.stderr)
