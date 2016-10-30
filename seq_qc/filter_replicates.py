@@ -213,14 +213,12 @@ def main():
         i += 1
     except UnboundLocalError:
         seq_io.print_error("error: no sequences were found to process")
-    else:
-        num_pairs = i
 
     if args.interleaved:
         args.out_r = args.out_f
 
-    for j, i in enumerate(sorted(uniques.keys())):
-        record = uniques[i]
+    for j, index in enumerate(sorted(uniques.keys())):
+        record = uniques[index]
         ident = record[3]
         fseq, rseq = split_by_length(record[0], record[1])
         fqual, rqual = split_by_length(decompress(record[2]), record[1])
@@ -229,9 +227,9 @@ def main():
 
     j += 1
 
-    num_reps = num_pairs - j
+    num_reps = i - j
     print("\nRead Pairs processed:\t{!s}\nReplicates found:\t{!s} "
-        "({:.2%})\n".format(num_pairs, num_reps, num_reps / num_pairs), file=sys.stderr)
+        "({:.2%})\n".format(i, num_reps, num_reps / i), file=sys.stderr)
 
 if __name__ == "__main__":
     main()
