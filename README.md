@@ -3,9 +3,11 @@
 ## About
 
 seq_qc is a python package for performing various quality control tasks on 
-sequencing reads. Currently, seq_qc has two programs for this - a dereplicator 
-for paired-end reads and a tool for trimming reads based on length and quality 
-score thresholds.
+sequencing reads. Currently, seq_qc has four programs for this - a dereplicator 
+for paired-end reads, a tool for trimming reads based on length and quality 
+score thresholds, a demultiplexer that uses barcodes in sequence headers to
+partition sequences, and a tool for filtering reads based on number of
+expected errors.
 
 ## Requirements
 
@@ -54,3 +56,14 @@ read to a desired length by removing bases from the start or end of the read.
     qtrim -1 input_interleaved.fastq -o output_interleaved.fastq --interleaved \
     --leading 20 --trailing 20 --trunc-n --min-len 60
 
+### Examples
+
+    error_filter -o output_forward.fastq.gz -v output_reverse.fastq.gz \
+    --max-errors 2 input_forward.fastq.gz input_reverse.fastq.gz
+
+### Examples
+
+    demultiplex_headers --barcodes barcode_map.tsv input_forward.fastq.gz \
+    input_reverse.fastq.gz
+
+    demultiplex_headers --bzip2 --interleaved input_interleaved.fastq.gz
