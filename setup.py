@@ -3,7 +3,7 @@ from setuptools import setup, Extension
 bernoulli = Extension('bernoulli', sources=['seq_qc/bernoullimodule.c'])
 
 setup(name='seq-qc',
-      version='1.2.2',
+      version='1.4.1',
       packages=['seq_qc',],
       description='utilities for performing various preprocessing steps on '
           'sequencing reads',
@@ -20,7 +20,7 @@ setup(name='seq-qc',
       ],
       keywords='bioinformatics sequence preprocessing quality control',
       url='https://github.com/Brazelton-Lab/seq_qc/',
-      download_url = 'https://github.com/Brazelton-Lab/seq_qc/tarball/v1.2.2',
+      download_url = 'https://github.com/Brazelton-Lab/seq_qc/tarball/v1.3.0',
       author='Christopher Thornton',
       author_email='christopher.thornton@utah.edu',
       license='GPLv2',
@@ -32,7 +32,8 @@ setup(name='seq-qc',
           'console_scripts': [
               'qtrim = seq_qc.qtrim:main',
               'filter_replicates = seq_qc.filter_replicates:main',
-              'error_filter = seq_qc.error_filter:main'
+              'error_filter = seq_qc.error_filter:main',
+              'demultiplex_headers = seq_qc.demultiplex:main'
           ]
       }
       )
