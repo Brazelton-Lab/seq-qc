@@ -166,7 +166,7 @@ def main():
 
         flen, rlen = len(fseq), len(rseq)
 
-        uniques[i] = (compress(fseq + rseq), flen, compress(fqual + rqual), ident)
+        uniques[i] = (fseq + rseq, flen, compress(fqual + rqual), ident)
 
         fsubsize, rsubsize = ((20, 20) if args.prefix else (flen, rlen))
         key = hashlib.md5(fseq[:fsubsize] + rseq[:rsubsize]).digest()
