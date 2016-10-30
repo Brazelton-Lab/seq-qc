@@ -21,7 +21,7 @@ from __future__ import division
 
 __author__ = "Christopher Thornton"
 __date__ = "2016-10-28"
-__version__ = "1.0.17"
+__version__ = "1.1.0"
 
 import argparse
 from array import array
@@ -29,6 +29,7 @@ import hashlib
 import pairs
 import seq_io
 import sys
+import zlib
 from screed.dna import reverse_complement
 
 def compare_seqs(query, template):
@@ -52,6 +53,9 @@ def compare_seqs(query, template):
             return 3
 
     return 0
+
+def self(item):
+    return item
 
 def split_by_length(sequence, length):
     return sequence[:length], sequence[length:]
@@ -126,6 +130,10 @@ def main():
     dup_args.add_argument('--rev-comp', dest='rev_comp',
         action='store_true',
         help="replicate can be the reverse-complement of another read")
+    parser.add_argument('--reduce-memory', dest='mem_use',
+        action='store_true',
+        help="reduce the mount of memory that the program uses. This will "
+        "result in a speed hit")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
@@ -142,10 +150,11 @@ def main():
 
     seq_io.logger(args.log, "Replicate\tTemplate\tType\n")
 
-    if args.out_format == 'fasta':
-        writer = seq_io.fasta_writer
-    else:
-        writer = seq_io.fastq_writer
+    compress = zlib.compress if args.mem_use else self
+    decompress = zlib.decompress if args.mem_use else self
+
+    writer = seq_io.fasta_writer if args.out_format == 'fasta' else \
+        seq_io.fastq_writer
 
     seq_db = {}
     uniques = {}
@@ -157,7 +166,7 @@ def main():
 
         flen, rlen = len(fseq), len(rseq)
 
-        uniques[i] = (fseq + rseq, flen, fqual + rqual, ident)
+        uniques[i] = (compress(fseq + rseq), flen, compress(fqual + rqual), ident)
 
         fsubsize, rsubsize = ((20, 20) if args.prefix else (flen, rlen))
         key = hashlib.md5(fseq[:fsubsize] + rseq[:rsubsize]).digest()
@@ -171,8 +180,8 @@ def main():
             try:
                 del uniques[dup_pos]
             except KeyError:
-                print("input file has more than one sequence with the same "
-                    "identifier", sys.stderr)
+                seq_io.print_error("error: input file has more than one "
+                    "sequence with the same identifier")
                 sys.exit(1)
             continue
 
@@ -189,9 +198,8 @@ def main():
                 try:
                     del uniques[dup_pos]
                 except KeyError:
-                    print("input file has more than one sequence with the same "
-                        "identifier", sys.stderr)
-                    sys.exit(1)
+                    seq_io.print_error("error: input file has more than one "
+                        "sequence with the same identifier")
                 continue
 
         # record is definitely not a duplicate, so add to database of ids to 
@@ -205,6 +213,8 @@ def main():
         i += 1
     except UnboundLocalError:
         seq_io.print_error("error: no sequences were found to process")
+    else:
+        num_pairs = i
 
     if args.interleaved:
         args.out_r = args.out_f
@@ -213,15 +223,15 @@ def main():
         record = uniques[i]
         ident = record[3]
         fseq, rseq = split_by_length(record[0], record[1])
-        fqual, rqual = split_by_length(record[2], record[1])
+        fqual, rqual = split_by_length(decompress(record[2]), record[1])
         writer(args.out_f, {'identifier': ident, 'description': fdesc, 'sequence': fseq, 'quality': fqual})
         writer(args.out_r, {'identifier': ident, 'description': rdesc, 'sequence': rseq, 'quality': rqual})
 
     j += 1
 
-    num_reps = i - j
+    num_reps = num_pairs - j
     print("\nRead Pairs processed:\t{!s}\nReplicates found:\t{!s} "
-        "({:.2%})\n".format(i, num_reps, num_reps / i), file=sys.stderr)
+        "({:.2%})\n".format(num_pairs, num_reps, num_reps / num_pairs), file=sys.stderr)
 
 if __name__ == "__main__":
     main()
