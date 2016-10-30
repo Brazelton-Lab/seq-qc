@@ -47,7 +47,7 @@ def main():
         "for each barcode sequence found in the fasta\q file.")
     parser.add_argument('-s', '--suffix', metavar='STR',
         type=str,
-        help="string to append to the end of the file. The default is to "
+        help="string to append to the end of the file name. The default is to "
         "append the file format (fastq or fasta) and the strand for PE data "
         "(forward, reverse, interleaved).")
     parser.add_argument('-f', '--out-format', metavar='FORMAT',
