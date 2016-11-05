@@ -21,7 +21,7 @@ from __future__ import division
 
 __author__ = "Christopher Thornton"
 __date__ = "2016-11-05"
-__version__ = "1.2.1"
+__version__ = "1.3.1"
 
 import argparse
 from array import array
@@ -112,9 +112,13 @@ def main():
     parser.add_argument('-o', '--out', dest='out_f', metavar='FILE',
         type=seq_io.open_output, default=sys.stdout,
         help="output reads")
-    parser.add_argument('-v', '--out-reverse', metavar='FILE', dest='out_r',
+    output_arg = parser.add_mutually_exclusive_group(required=False)
+    output_arg.add_argument('-v', '--out-reverse', metavar='FILE', dest='out_r',
         type=seq_io.open_output,
         help="output reverse reads")
+    output_arg.add_argument('--out-interleaved', dest='out_interleaved',
+        action='store_true',
+        help="output interleaved paired-end reads, even if input is split")
     parser.add_argument('-f', '--out-format', metavar='FORMAT',
         dest='out_format',
         default='fastq',
@@ -142,9 +146,9 @@ def main():
 
     seq_io.program_info('filter_replicates', all_args, __version__)
 
-    if args.r_file and not args.out_r:
-        parser.error("argument -v/--out-reverse is required when an input "
-            "reverse file is provided")
+    if args.r_file and not (args.out_r or args.out_interleaved):
+        parser.error("one of -v/--out-reverse or --out-interleaved is required "
+            "when the argument -r/--reverse is used")
 
     f_file = sys.stdin if args.f_file == '-' else args.f_file
     out_f = args.out_f
@@ -216,7 +220,9 @@ def main():
     except UnboundLocalError:
         seq_io.print_error("error: no sequences were found to process.")
 
-    out_r = args.out_f if (args.interleaved and not args.out_r) else args.out_r
+    out_r = out_f if ((args.interleaved or args.out_interleaved) and not \
+        args.out_r) else args.out_r
+
 
     for j, index in enumerate(sorted(uniques.keys())):
         record = uniques[index]

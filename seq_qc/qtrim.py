@@ -114,11 +114,15 @@ def main():
     parser.add_argument('-o', '--out', metavar='FILE', dest='out_f',
         type=seq_io.open_output, default=sys.stdout,
         help="output trimmed reads [required]")
-    parser.add_argument('-v', '--out-reverse', metavar='FILE', dest='out_r',
+    output_arg = parser.add_mutually_exclusive_group(required=False)
+    output_arg.add_argument('-v', '--out-reverse', metavar='FILE', dest='out_r',
         type=seq_io.open_output,
         help="output trimmed reverse reads")
-    parser.add_argument('-s', '--singles', metavar='FILE', dest='singles',
-        type=str,
+    output_arg.add_argument('--out-interleaved', dest='out_interleaved',
+        action='store_true',
+        help="output interleaved paired-end reads, even if input is split")
+    parser.add_argument('-s', '--singles', metavar='FILE', dest='out_s',
+        type=seq_io.open_output,
         help="output trimmed orphaned reads")
     parser.add_argument('-f', '--out-format', metavar='FORMAT', 
         dest='out_format', default='fastq',
@@ -177,6 +181,7 @@ def main():
         version='%(prog)s ' + __version__)
     args = parser.parse_args()
     all_args = sys.argv[1:]
+
     seq_io.program_info('qtrim', all_args, __version__)
 
     try:
@@ -202,9 +207,9 @@ def main():
     out_f = args.out_f
     iterator = seq_io.get_iterator(f_file, args.r_file, args.interleaved)
 
-    if args.r_file and not args.out_r:
-        parser.error("argument -v/--out-reverse is required when a reverse "
-            "file is provided")
+    if args.r_file and not (args.out_r or args.out_interleaved):
+        parser.error("one of -v/--out-reverse or --out-interleaved is required "
+            "when the argument -r/--reverse is used")
 
     trim_tasks = {'l': (trim.trim_leading, args.lead_score), 
         't': (trim.trim_trailing, args.trail_score), 
@@ -228,9 +233,9 @@ def main():
         seq_io.logger(args.log, "Record\tForward length\tForward trimmed "
             "length\tReverse length\tReverse trimmed length\n")
 
-        out_s = seq_io.open_output(args.singles) if args.singles else None
-        out_r = args.out_f if (args.interleaved and not args.out_r) else \
-            args.out_r
+        out_s = args.out_s if args.out_s else None
+        out_r = out_f if ((args.interleaved or args.out_interleaved) and not \
+            args.out_r) else args.out_r
 
         pairs_passed = discarded_pairs = fsingles = rsingles = 0
         for i, (forward, reverse) in enumerate(iterator):

@@ -33,7 +33,7 @@ from __future__ import division
 
 __author__ = "Christopher Thornton"
 __date__ = "2016-11-05"
-__version__ = "1.0.1"
+__version__ = "1.1.2"
 
 import argparse
 import math
@@ -77,7 +77,7 @@ def crop_string(record, trunc=None, headcrop=None):
     else:
         start = headcrop
     if not trunc:
-        end = seqlen
+        end = len(record['sequence'])
     else:
         end = trunc
 
@@ -161,9 +161,13 @@ def main():
     parser.add_argument('-o', '--out', metavar='FILE', dest='out_f',
         type=seq_io.open_output, default=sys.stdout,
         help="output file for filtered reads [required]")
-    parser.add_argument('-v', '--out-reverse', metavar='FILE', dest='out_r',
+    output_arg = parser.add_mutually_exclusive_group(required=False)
+    output_arg.add_argument('-v', '--out-reverse', metavar='FILE', dest='out_r',
         type=seq_io.open_output,
         help="output file for filtered reverse reads")
+    output_arg.add_argument('--out-interleaved', dest='out_interleaved',
+        action='store_true',
+        help="output interleaved paired-end reads, even if input is split")
     parser.add_argument('-s', '--singles', metavar='FILE', dest='out_s',
         type=seq_io.open_output,
         help="output file for filtered orphan reads")
@@ -209,9 +213,9 @@ def main():
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
-
     args = parser.parse_args()
     all_args = sys.argv[1:]
+
     seq_io.program_info('error_filter', all_args, __version__)
 
     try:
@@ -231,14 +235,17 @@ def main():
     iterator = seq_io.get_iterator(f_file, args.r_file, args.interleaved)
     out_f = args.out_f
 
-    if args.r_file and not args.out_r:
-        parser.error("argument -v/--out-reverse is required when a reverse "
-            "file is provided")
+    if args.r_file and not (args.out_r or args.out_interleaved):
+        parser.error("one of -v/--out-reverse or --out-interleaved is required "
+            "when the argument -r/--reverse is used")
 
     writer = seq_io.fasta_writer if (args.out_format == 'fasta') else \
         seq_io.fastq_writer
 
-    out_r = out_f if (args.interleaved and not args.out_r) else args.out_r
+    out_r = out_f if ((args.interleaved or args.out_interleaved) and not \
+        args.out_r) else args.out_r
+
+    out_s = args.out_s if args.out_s else None
     
     error_func = {'poisson_binomial': bernoulli.calculate_errors_PB,
                   'poisson': calculate_errors_poisson}
@@ -271,12 +278,12 @@ def main():
         # forward orphaned, reverse filtered
         elif fee <= fthreshold and ree > rthreshold:
             fsingles += 1
-            writer(args.out_s, forward)
+            writer(out_s, forward)
             seq_io.logger(args.log, "{}\terrors={!s}".format(rheader, ree))
         # reverse orphaned, forward filtered
         elif fee > fthreshold and ree <=rthreshold:
             rsingles += 1
-            writer(args.out_s, reverse)
+            writer(out_s, reverse)
             seq_io.logger(args.log, "{}\terrors={!s}".format(fheader, fee))
         # both discarded
         else:

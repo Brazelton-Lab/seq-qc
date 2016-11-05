@@ -70,6 +70,7 @@ def main():
 
     args = parser.parse_args()
     all_args = sys.argv[1:]
+
     seq_io.program_info('demultiplex_headers', all_args, __version__)
 
     f_file = sys.stdin if args.f_file == '-' else args.f_file
