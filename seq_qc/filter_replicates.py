@@ -1,12 +1,12 @@
 #! /usr/bin/env python
 """
-De-replicate paired-end sequencing reads. Can check for exact, 
-5'-prefix, and reverse-complement replicates.
+De-replicate paired-end sequencing reads. Can check if a read is an exact, 
+5'-prefix, or reverse-complement duplicate of another read in the dataset.
  
-For split paired-end reads:
+For split read pairs:
     filter_replicates [flags] -o out.forward -v out.reverse in.forward in.reverse
 
-For interleaved paired-end reads:
+For interleaved read pairs:
     filter_replicates [flags] [-o out.interleaved] in.interleaved
 
 Supported file formats are FASTQ and FASTA. Compression using gzip and bzip2 
@@ -20,8 +20,8 @@ from __future__ import print_function
 from __future__ import division
 
 __author__ = "Christopher Thornton"
-__date__ = "2016-10-28"
-__version__ = "1.1.0"
+__date__ = "2016-11-05"
+__version__ = "1.2.1"
 
 import argparse
 from array import array
@@ -132,13 +132,14 @@ def main():
         help="replicate can be the reverse-complement of another read")
     parser.add_argument('--reduce-memory', dest='mem_use',
         action='store_true',
-        help="reduce the mount of memory that the program uses. This will "
-        "result in a speed hit")
+        help="reduce the mount of memory that the program uses. This could "
+        "result in a drastic increase in run time.")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
     args = parser.parse_args()
     all_args = sys.argv[1:]
+
     seq_io.program_info('filter_replicates', all_args, __version__)
 
     if args.r_file and not args.out_r:
@@ -146,6 +147,7 @@ def main():
             "reverse file is provided")
 
     f_file = sys.stdin if args.f_file == '-' else args.f_file
+    out_f = args.out_f
     iterator = seq_io.get_iterator(f_file, args.r_file, args.interleaved)
 
     seq_io.logger(args.log, "Replicate\tTemplate\tType\n")
@@ -212,18 +214,19 @@ def main():
     try:
         i += 1
     except UnboundLocalError:
-        seq_io.print_error("error: no sequences were found to process")
+        seq_io.print_error("error: no sequences were found to process.")
 
-    if args.interleaved:
-        args.out_r = args.out_f
+    out_r = args.out_f if (args.interleaved and not args.out_r) else args.out_r
 
     for j, index in enumerate(sorted(uniques.keys())):
         record = uniques[index]
         ident = record[3]
         fseq, rseq = split_by_length(record[0], record[1])
         fqual, rqual = split_by_length(decompress(record[2]), record[1])
-        writer(args.out_f, {'identifier': ident, 'description': fdesc, 'sequence': fseq, 'quality': fqual})
-        writer(args.out_r, {'identifier': ident, 'description': rdesc, 'sequence': rseq, 'quality': rqual})
+        writer(out_f, {'identifier': ident, 'description': fdesc, 
+            'sequence': fseq, 'quality': fqual})
+        writer(out_r, {'identifier': ident, 'description': rdesc, 
+            'sequence': rseq, 'quality': rqual})
 
     j += 1
 

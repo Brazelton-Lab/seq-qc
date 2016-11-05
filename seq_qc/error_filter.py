@@ -3,10 +3,10 @@
 """
 Quality filter paired-end sequencing reads using a maximum errors threshold.
 
-For single-end and interleaved reads:
+For interleaved read pairs:
     error_filter [options] [-o output] input
  
-For split paired-end reads:
+For split read pairs:
     error_filter [option] -o out.forward -v out.reverse -s out.singles "\"
         in.forward in.reverse
 
@@ -32,8 +32,8 @@ from __future__ import print_function
 from __future__ import division
 
 __author__ = "Christopher Thornton"
-__date__ = "2016-10-28"
-__version__ = "0.2.2"
+__date__ = "2016-11-05"
+__version__ = "1.0.1"
 
 import argparse
 import math
@@ -229,18 +229,16 @@ def main():
 
     f_file = sys.stdin if args.f_file == '-' else args.f_file
     iterator = seq_io.get_iterator(f_file, args.r_file, args.interleaved)
+    out_f = args.out_f
 
     if args.r_file and not args.out_r:
         parser.error("argument -v/--out-reverse is required when a reverse "
             "file is provided")
 
-    if args.out_format == 'fasta':
-        writer = seq_io.fasta_writer
-    else:
-        writer = seq_io.fastq_writer
+    writer = seq_io.fasta_writer if (args.out_format == 'fasta') else \
+        seq_io.fastq_writer
 
-    if args.interleaved:
-        args.out_r = args.out_f
+    out_r = out_f if (args.interleaved and not args.out_r) else args.out_r
     
     error_func = {'poisson_binomial': bernoulli.calculate_errors_PB,
                   'poisson': calculate_errors_poisson}
@@ -268,8 +266,8 @@ def main():
         # both good
         if fee <= fthreshold and ree <= rthreshold:
             pairs_passed += 1
-            writer(args.out_f, forward)
-            writer(args.out_r, reverse)
+            writer(out_f, forward)
+            writer(out_r, reverse)
         # forward orphaned, reverse filtered
         elif fee <= fthreshold and ree > rthreshold:
             fsingles += 1
