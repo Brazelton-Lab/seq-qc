@@ -1,13 +1,15 @@
 #! /usr/bin/env python
 """
-Trim sequences using phred quality score information and filter reads by
-length
+Standard sequence quality control tool that can be used for base cropping, 
+trimming sequences by quality score, and filtering reads that fail to meet
+a minimum length threshold post cropping and trimming.
 
 For single-end and interleaved reads:
     qtrim [options] [-o output] input
  
 For split paired-end reads:
-    qtrim [option] -o out.forward -v out.reverse -s out.singles in.forward in.reverse
+    qtrim [option] -o out.forward -v out.reverse -s out.singles in.forward \
+        in.reverse
 
 Input files must be in FASTQ format. Output can be in either FASTQ or FASTA 
 format. Compression using gzip and bzip2 algorithms is automatically detected 
@@ -22,8 +24,8 @@ from __future__ import print_function
 from __future__ import division
 
 __author__ = "Christopher Thornton"
-__date__ = "2016-10-06"
-__version__ = "1.2.0"
+__date__ = "2016-11-05"
+__version__ = "1.3.2"
 
 import argparse
 import seq_io
@@ -169,12 +171,13 @@ def main():
         help="trim by removing low quality bases from the end of the read")
     trim_args.add_argument('--trunc-n', dest='trunc_n',
         action='store_true',
-        help="truncate sequence at position of first ambiguous base")
+        help="truncate sequence at the position of the first ambiguous base")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
     args = parser.parse_args()
     all_args = sys.argv[1:]
+    seq_io.program_info('qtrim', all_args, __version__)
 
     try:
         fcrop, rcrop = args.crop
@@ -196,9 +199,8 @@ def main():
         fminlen = rminlen = 0
 
     f_file = sys.stdin if args.f_file == '-' else args.f_file
+    out_f = args.out_f
     iterator = seq_io.get_iterator(f_file, args.r_file, args.interleaved)
-
-    seq_io.program_info('qtrim', all_args, __version__)
 
     if args.r_file and not args.out_r:
         parser.error("argument -v/--out-reverse is required when a reverse "
@@ -216,10 +218,8 @@ def main():
     if len(trim_steps) < 1 and not (args.crop or args.headcrop):
         seq_io.print_error("error: no trimming steps were applied")
 
-    if args.out_format == 'fasta':
-        writer = seq_io.fasta_writer
-    else:
-        writer = seq_io.fastq_writer
+    writer = seq_io.fasta_writer if (args.out_format == 'fasta') else \
+        seq_io.fastq_writer
 
     paired = True if (args.interleaved or args.r_file) else False
  
@@ -228,9 +228,9 @@ def main():
         seq_io.logger(args.log, "Record\tForward length\tForward trimmed "
             "length\tReverse length\tReverse trimmed length\n")
 
-        out_f = args.out_f
         out_s = seq_io.open_output(args.singles) if args.singles else None
-        out_r = args.out_f if args.interleaved else args.out_r
+        out_r = args.out_f if (args.interleaved and not args.out_r) else \
+            args.out_r
 
         pairs_passed = discarded_pairs = fsingles = rsingles = 0
         for i, (forward, reverse) in enumerate(iterator):
@@ -288,7 +288,7 @@ def main():
                 first_read = record['identifier']
             elif i == 1:
                 if first_read == record['identifier'] and not args.force:
-                    seq_io.print_error("warning: the input fasta appears to "
+                    seq_io.print_error("warning: the input fastq appears to "
                         "contain interleaved paired-end reads. Please run with "
                         "the --force flag to proceed with processing the data "
                         "as single-end reads")
@@ -297,7 +297,7 @@ def main():
                 args.qual_type, rcrop, rheadcrop, args.trunc_n)
             
             if trimlen >= rminlen:
-                writer(args.out_f, record)
+                writer(out_f, record)
             else:
                 discarded += 1
 
@@ -307,7 +307,8 @@ def main():
         try:
             i += 1
         except UnboundLocalError:
-            seq_io.print_error("error: no sequences were found to process")
+            seq_io.print_error("error: no sequences were found to process. Is "
+                "the input properly formatted?")
  
         passed = i - discarded
         print("\nRecords processed:\t{!s}\nPassed filtering:\t{!s} "
