@@ -13,55 +13,56 @@ def translate_quality(quals, encoding=33):
             print_error("error: wrong quality score encoding provided")
     return qscores
 
-def adaptive_trim(quals, trim_info, encoding=33):
+def adaptive_trim(scores, trim_info):
     """
-    Uses sliding windows along with quality and length thresholds to determine \
+    Uses sliding window along with quality and length thresholds to determine \
     when the quality is sufficiently low to trim the 3'-end of reads and when \
-    the quality is sufficiently high enough to trim the 5'-end of read
-    (inspired by the trimmer sickle).
+    the quality is sufficiently high enough to trim the 5'-end of read. 
+    Inspired by the trimmer sickle.
     """
-    window_size = abs(trim_info[0])
-    threshold = abs(trim_info[1])
-    start = 0
-    seqlen = end = len(quals)
+    start, end = 0, 0
+    seqlen = len(scores)
     if seqlen == 0:
         return (start, end)
 
+    window_size = abs(trim_info[0])
+    threshold = abs(trim_info[1])
     if type(window_size) == type(int()):
-        if window_size > seqlen or window_size == 1 or window_size == 0:
-            step_size = seqlen
+        if window_size > seqlen or window_size == 0:
+            def_size = 0.1 * seqlen
+            step_size = round(def_size) if def_size >= 1 else seqlen
         else:
             step_size = window_size
-    elif type(window_size) == type(float()):
-        window_len = int(window_size * length)
+    elif type(window_size) == type(float()) and (0 < window_size < 1):
+        window_len = round(window_size * seqlen)
         step_size = window_len if window_len > 1 else 2
+    else:
+        def_size = 0.1 * seqlen
+        step_size = round(def_size) if def_size >= 1 else seqlen
 
     prev_scores = []
     found_start = False
-    for position in range(start, end, step_size):
-        frame = quals[position: position + step_size]
+    for position in range(start, seqlen, step_size):
+        frame = scores[position: position + step_size]
         framelen = len(frame)
-
-        scores = translate_quality(frame, encoding)
-        average = sum(scores) / framelen
+        average = sum(frame) / framelen
 
         # find the start position by searching until the average > threshold
         if not found_start:
             if average > threshold:
                 found_start = True
                 # check to see if bases immediately before current frame are
-                # above the threshold
-                prev_scores.reverse()
-                for score in prev_scores:
+                # above the threshold too
+                for score in prev_scores[::-1]:
                     if score > threshold:
                         start -= 1
                     else:
                         break
 
-                # average is lower than the threshold, but first few bases may
-                # still be good qualsity
+                # average is higher than the threshold, but the rise in quality
+                # may have occurred towards the end of the frame
                 if start == position:
-                    for score in scores:
+                    for score in frame:
                         if score < threshold:
                             start += 1
                         else:
@@ -71,69 +72,52 @@ def adaptive_trim(quals, trim_info, encoding=33):
         else:
             # now find the end position by searching until average < threshold
             if average < threshold:
-                end = position
+                end = seqlen - position
                 # determine trim position by checking previous scores first
-                prev_scores.reverse()
-                for score in prev_scores:
+                for score in prev_scores[::-1]:
                     if score < threshold:
-                        end -= 1
+                        end += 1
                     else:
                         break
 
                 # otherwise check scores of current frame and cut when it falls
                 # below the threshold
-                if end == position:
-                    for score in scores:
+                if end == seqlen - position:
+                    for score in frame:
                         if score >= threshold:
-                            end += 1
+                            end -= 1
                         else:
                             break
 
                 return (start, end)
 
-        prev_scores = scores
+        prev_scores = frame
 
     # if no trimming required, return original start and end position
     return (start, end)
 
-def trim_leading(quals, threshold, encoding=33):
+def trim_leading(scores, threshold):
     """
     Trim low quality bases from the 5'-end of the sequence
     """
     threshold = abs(threshold)
 
     position = 0
-    for position, basescore in enumerate(translate_quality(quals, encoding)):
+    for position, basescore in enumerate(scores):
         if basescore >= threshold:
             break
 
-    start = position
-    return (start, len(quals))
+    return (position, 0)
 
-def trim_trailing(quals, threshold, encoding=33):
+def trim_trailing(scores, threshold):
     """
     Trim low quality bases from the 3'-end of the sequence.
     """
-    end = len(quals)
     threshold = abs(threshold)
 
-    scores = translate_quality(quals, encoding)
-    scores.reverse()
-    for basescore in scores:
+    position = 0
+    for position, basescore in enumerate(scores[::-1]):
         if basescore >= threshold:
             break
-        else:
-            end -= 1
 
-    return (0, end)
-
-def trunc_n(seq):
-    """
-    Truncate sequence at first ambiguous base.
-    """
-    try:
-        end = seq.index('N')
-    except ValueError:
-        end = len(seq)
-
-    return (0, end)
+    return (0, position)
