@@ -8,7 +8,7 @@ For single-end and interleaved reads:
     qtrim [options] [-o output] input
  
 For split paired-end reads:
-    qtrim [option] -o out.forward -v out.reverse -s out.singles in.forward \
+    qtrim [option] -o out.forward -v out.reverse -s out.singles in.forward 
         in.reverse
 
 Input files must be in FASTQ format. Output can be in either FASTQ or FASTA 
@@ -24,38 +24,37 @@ from __future__ import print_function
 from __future__ import division
 
 __author__ = "Christopher Thornton"
-__date__ = "2016-11-05"
-__version__ = "1.3.2"
+__date__ = "2016-11-06"
+__version__ = "1.5.1"
 
 import argparse
 import seq_io
 import sys
 import trim
 
-def apply_trimming(record, steps, qual_type, crop=None, headcrop=None, 
-    trunc=False):
-    seq = record['sequence']
+def apply_trimming(record, steps, qual_type, start=0, end=0, trunc=False):
     qual = record['quality']
-    origlen = len(seq)
+    seq = record['sequence']
+    slen = len(seq)
 
-    if crop:
-        seq, qual = (seq[:crop], qual[:crop])
-    if headcrop:
-        seq, qual = (seq[headcrop:], qual[headcrop:])
-    oldlen = len(seq)
-
+    scores = trim.translate_quality(qual, qual_type)
     for step, value in steps:
-        start, end = step(qual, value, qual_type)
-        seq, qual = (seq[start: end], qual[start: end])
-        oldlen = len(seq)
+        newstart, newend = step(scores[start: slen - end], value)
+        start += newstart
+        end += newend
 
+    last = slen - end
     if trunc:
-        start, end = trim.trunc_n(seq)
-        seq, qual = (seq[start: end], qual[start: end])
+        try:
+            nstart = seq[start: last].index('N')
+        except ValueError:
+            nstart = last
+        seq, qual = seq[start: nstart], qual[start: nstart]
+    else:
+        seq, qual = seq[start: last], qual[start: last]
 
-    trimlen = len(seq)
-    record['sequence'], record['quality'] = (seq, qual)
-    return record, origlen, trimlen
+    record['sequence'], record['quality'] = seq, qual
+    return record
 
 def parse_sw_arg(argument):
     try:
@@ -84,14 +83,12 @@ def get_list(argument):
     try:
         argument = [abs(int(i.lstrip())) for i in argument.split(",")]
     except ValueError:
-        print("error: input to -c/--crop, -d/--headcrop, and -m/--min-len must "
-            "be in the form INT or INT,INT")
-        sys.exit(1)
+        seq_io.print_error("error: input to -c/--crop, -d/--headcrop, and "
+            "-m/--min-len must be in the form INT or INT,INT")
     arglen = len(argument)
     if arglen < 1 or arglen > 2:
-        print("error: one or two integer values should be provided with "
-            "-c/--crop, -h/--headcrop, and -m/--min-len")
-        sys.exit(1)
+        seq_io.print_error("error: one or two integer values should be "
+            "provided with -c/--crop, -h/--headcrop, and -m/--min-len")
     return argument
 
 def main():
@@ -137,7 +134,7 @@ def main():
         help="ASCII base quality score encoding [default: 33]. Options are "
             "33 (for phred33) or 64 (for phred64)")
     parser.add_argument('-m', '--min-len', metavar='LEN', dest='minlen',
-        type=get_list,
+        type=get_list, default='0',
         help="filter reads shorter than the minimum length threshold "
         "[default: 0,0]. Different values can be provided for the forward and "
         "reverse reads by separating them with a comma (e.g. 80,60)")
@@ -156,15 +153,15 @@ def main():
         "'window_size' can either be length in bases or fraction of the total "
         "read length")
     trim_args.add_argument('-H', '--headcrop', metavar='INT,INT',
-        type=get_list,
+        type=get_list, default='0',
         help="remove exactly the number of bases specified from the start of "
         "the read. Different values can be provided for the forward and "
         "reverse reads by separating them with a comma (e.g. 2,0)")
     trim_args.add_argument('-C', '--crop', metavar='INT,INT',
-        type=get_list,
-        help="trim to the specified size by removing bases from the end of "
+        type=get_list, default='0',
+        help="remove exactly the number of bases specified from the end of "
         "the read. Different values can be provided for the forward and "
-        "reverse reads by separating them with a comma (e.g 160,200)")
+        "reverse reads by separating them with a comma (e.g. 2,0)")
     trim_args.add_argument('-L', '--leading', metavar='SCORE', 
         dest='lead_score',
         type=int,
@@ -188,20 +185,14 @@ def main():
         fcrop, rcrop = args.crop
     except ValueError:
         fcrop = rcrop = args.crop[0]
-    except TypeError:
-        fcrop = rcrop = None
     try:
         fheadcrop, rheadcrop = args.headcrop
     except ValueError:
         fheadcrop = rheadcrop = args.headcrop[0]
-    except TypeError:
-        fheadcrop = rheadcrop = None
     try:
         fminlen, rminlen = args.minlen
     except ValueError:
         fminlen = rminlen = args.minlen[0]
-    except TypeError:
-        fminlen = rminlen = 0
 
     f_file = sys.stdin if args.f_file == '-' else args.f_file
     out_f = args.out_f
@@ -239,10 +230,17 @@ def main():
 
         pairs_passed = discarded_pairs = fsingles = rsingles = 0
         for i, (forward, reverse) in enumerate(iterator):
-            forward, flen, ftrim = apply_trimming(forward, trim_steps, 
-                args.qual_type, fcrop, fheadcrop, args.trunc_n)
-            reverse, rlen, rtrim = apply_trimming(reverse, trim_steps, 
-                args.qual_type, rcrop, rheadcrop, args.trunc_n)
+            identifier = forward['identifier']
+            forig = len(forward['sequence'])
+            rorig = len(reverse['sequence'])
+
+            forward = apply_trimming(forward, trim_steps, args.qual_type, 
+                fheadcrop, fcrop, args.trunc_n)
+            ftrim = len(forward['sequence'])
+
+            reverse = apply_trimming(reverse, trim_steps, args.qual_type, 
+                rheadcrop, rcrop, args.trunc_n)
+            rtrim = len(reverse['sequence'])
 
             # both good
             if ftrim >= fminlen and rtrim >= rminlen:
@@ -261,8 +259,8 @@ def main():
             else:
                 discarded_pairs += 1
 
-            seq_io.logger(args.log, "{}\t{}\t{}\t{}\t{}\n"
-                .format(forward['identifier'], flen, ftrim, rlen, rtrim))
+            seq_io.logger(args.log, "{}\t{}\t{}\t{}\t{}\n".format(identifier, 
+                forig, ftrim, rorig, rtrim))
 
         try:
             i += 1
@@ -283,7 +281,7 @@ def main():
         print("\nProcessing input as single-end reads", file=sys.stderr)
         seq_io.logger(args.log, "Record\tLength\tTrimmed length\n")
 
-        if args.singles:
+        if args.out_s:
             print("\nwarning: argument --singles used with single-end reads"
                 "... ignoring\n", file=sys.stderr)
 
@@ -298,16 +296,18 @@ def main():
                         "the --force flag to proceed with processing the data "
                         "as single-end reads")
 
-            record, seqlen, trimlen = apply_trimming(record, trim_steps, 
-                args.qual_type, rcrop, rheadcrop, args.trunc_n)
+            origlen = len(record['sequence'])
+            record = apply_trimming(record, trim_steps, args.qual_type,
+                fheadcrop, fcrop, args.trunc_n)
+            trimlen = len(record['sequence'])
             
-            if trimlen >= rminlen:
+            if trimlen >= fminlen:
                 writer(out_f, record)
             else:
                 discarded += 1
 
             seq_io.logger(args.log, "{}\t{}\t{}\n".format(record['identifier'],
-                seqlen, trimlen))
+                origlen, trimlen))
 
         try:
             i += 1
