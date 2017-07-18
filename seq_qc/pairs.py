@@ -31,6 +31,10 @@ def verify_paired(record1, record2):
         r_desc.startswith('2:'):
         return True
 
+    # handle no description
+    elif l_name == r_name:
+        return True
+
     return False
 
 def reverse_complement_paired(forward, reverse):
