@@ -60,36 +60,43 @@ def parse_colons(argument):
     try:
         window, score = argument.split(':')
     except ValueError:
-        seq_io.print_error("error: the input for -w/--window-size is "
-            "formatted incorrectly. See --help for instructions")
+        seq_io.print_error("error: the input provided to sliding-window is "
+                           "formatted incorrectly. See --help for usage")
     else:
         if score.isdigit():
             score = int(score)
         else:
-            seq_io.print_error("error: score threshold should be an integer "
-                "value")
+            seq_io.print_error("error: the quality score threshold provided "
+                               "to sliding-window must be an integer value")
         if window.isdigit():
             window = int(window)
         else:
             try:
                 window = float(window)
             except ValueError:
-                seq_io.print_error("error: window size should be either an "
-                    "integer or a fraction")
+                seq_io.print_error("error: the window-size provided to "
+                                   "sliding-window must be either an integer "
+                                   "value or a fraction")
 
     return (window, score)
 
-def parse_commas(argument):
+def parse_commas(argument, argname):
+    argument = [i.lstrip for i in argument.split(",")]
+
+    if 1> len(argument) > 2:
+        seq_io.print_error("error: only one or two integer values should be "
+            "provided to {0}".format(argname))
+
     try:
-        argument = [abs(int(i.lstrip())) for i in argument.split(",")]
+        arg1 = int(argument[0])
+        arg2 = int(argument[1])
     except ValueError:
-        seq_io.print_error("error: input to -c/--crop, -d/--headcrop, and "
-            "-m/--min-len must be in the form INT or INT,INT")
-    arglen = len(argument)
-    if arglen < 1 or arglen > 2:
-        seq_io.print_error("error: one or two integer values should be "
-            "provided with -c/--crop, -h/--headcrop, and -m/--min-len")
-    return argument
+        seq_io.print_error("error: input to {0} must be one or more integer "
+                           "values in the form INT or INT,INT".format(argname))
+    except IndexError:
+        arg1 = arg2 = int(argument[0])
+
+    return (arg1, arg2)
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
@@ -135,6 +142,7 @@ def main():
     parser.add_argument('-f', '--out-format', 
         metavar='FORMAT', 
         dest='out_format', 
+        type=str,
         choices=['fasta', 'fastq'],
         default='fastq',
         help="output files format (fastq or fasta) [default: fastq]")
@@ -152,7 +160,7 @@ def main():
     parser.add_argument('-m', '--min-len', 
         metavar='LEN [,LEN]', 
         dest='minlen',
-        type=parse_commas, 
+        type=str, 
         default='0',
         help="filter reads shorter than the minimum length threshold [default:"
              " off]. Different values can be provided for the forward and "
@@ -162,6 +170,7 @@ def main():
     trim_args.add_argument('-O', '--trim-order', 
         metavar='ORDER',
         dest='trim_order',
+        type=str,
         default='ltw',
         help="order of trimming steps [default: ltw (corresponds to leading, "
         "trailing, and sliding-window)]")
@@ -176,7 +185,7 @@ def main():
         "read length")
     trim_args.add_argument('-H', '--headcrop', 
         metavar='INT [,INT]',
-        type=parse_commas, 
+        type=str,
         default='0',
         help="remove exactly the number of bases specified from the start of "
         "the reads. Different values can be provided for the forward and "
@@ -184,7 +193,7 @@ def main():
         "(e.g. 2,0), or a single value can be provided for both")
     trim_args.add_argument('-C', '--crop', 
         metavar='INT [,INT]',
-        type=parse_commas, 
+        type=str,
         default='0',
         help="remove exactly the number of bases specified from the end of "
         "the reads. Different values can be provided for the forward and "
@@ -203,7 +212,7 @@ def main():
     trim_args.add_argument('--trunc-n', 
         dest='trunc_n',
         action='store_true',
-        help="truncate sequence at the position of the first ambiguous base")
+        help="truncate sequence at position of first ambiguous base")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
@@ -212,21 +221,14 @@ def main():
 
     seq_io.program_info('qtrim', all_args, __version__)
 
-    try:
-        fcrop, rcrop = args.crop
-    except ValueError:
-        fcrop = rcrop = args.crop[0]
-    try:
-        fheadcrop, rheadcrop = args.headcrop
-    except ValueError:
-        fheadcrop = rheadcrop = args.headcrop[0]
-    try:
-        fminlen, rminlen = args.minlen
-    except ValueError:
-        fminlen = rminlen = args.minlen[0]
-
+    # Assign arguments
+    fcrop, rcrop = parse_commas(args.crop, "crop")
+    fheadcrop, rheadcrop = parse_commas(args.headcrop, "headcrop")
+    fminlen, rminlen = parse_commas(args.minlen, "minlen")
     f_file = sys.stdin if args.f_file == '-' else args.f_file
     out_f = args.out_f
+
+    # Prepare the iterator, either 
     iterator = seq_io.get_iterator(f_file, args.r_file, args.interleaved)
 
     if args.r_file and not (args.out_r or args.out_interleaved):
