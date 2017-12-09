@@ -1,125 +1,84 @@
 from __future__ import print_function
 
-import bz2
-import gzip
-import io
-from itertools import izip
-import seq_parsers
+from arandomness.argparse import Open
+from bio_utils.iterators import fasta_iter, fastq_iter
 import sys
 import textwrap
 
-def open_output(filename):
-    """
-    Decide how to open an output file for writing based on the file extension
-    """
-    extension = filename.split('.')[-1]
-    if extension == 'gz':
-        return gzip.GzipFile(filename, 'wb')
-    elif extension == 'bz2':
-        return bz2.BZ2File(filename, 'wb')
-    else:
-        return open(filename, 'w')
 
-def open_input(filename):
+def read_iterator(forward, reverse=None, interleaved=False):
+    """Determines file format of the reads, if possible, and generates an
+    object to iterate over. If reads are paired-end, each record will
+    contain both the forward and reverse sequences of the pair.
     """
-    Make a best-effort guess as to how to open/parse the given sequence file.
-
-    Deals with .gz, FASTA, and FASTQ records.
-    """
-    file_signatures = {
-        "\x1f\x8b\x08": "gz",
-        "\x42\x5a\x68": "bz2",
-        # "\x50\x4b\x03\x04": "zip"
-    }  # Inspired by http://stackoverflow.com/a/13044946/1585509
     try:
-        bufferedfile = io.open(file=filename, mode='rb', buffering=8192)
-    except IOError:
-        print_error("error: unable to open {} for reading".format(filename))
-    except TypeError:
-        filehandle = filename
-        parser = seq_parsers.fastq_parser
-    else:
-        num_bytes_to_peek = max(len(x) for x in file_signatures)
-        file_start = bufferedfile.peek(num_bytes_to_peek)
-        compression = None
-        for signature, ftype in file_signatures.items():
-            if file_start.startswith(signature):
-                compression = ftype
-                break
+        # Python2
+        from itertools import izip
+    except ImportError:
+        # Python3
+        izip = zip
 
-        if compression is 'bz2':
-            filehandle = bz2.BZ2File(filename)
-            peek = filehandle.peek(1)
-        elif compression is 'gz':
-            if not bufferedfile.seekable():
-                print_error("gziped data not streamable, pipe through zcat \
-                    first")
-            peek = gzip.GzipFile(filename).read(1)
-            filehandle = gzip.GzipFile(filename)
-        else:
-            peek = bufferedfile.peek(1)
-            filehandle = bufferedfile
+    # Guess at the format of the input read files
+#    peek_first = forward.peek(1)
+#    print(peek_first[0])
+#    try:
+#        if peek[0] == '>':
+#             parser = fasta_iter
+#        elif peek[0] == '@':
+#             parser = fastq_iter
+#    except IndexError as err:
+#        print_error("error: unable to determine format of {}".format(forward))
 
-        parser = None
-        try:
-            if peek[0] == '>':
-                parser = seq_parsers.fasta_parser
-            elif peek[0] == '@':
-                parser = seq_parsers.fastq_parser
-        except IndexError as err:
-            return []  # empty file
+    parser = fastq_iter
+    f_iter = parser(forward)
 
-    if parser is None:
-        # return the filehandle instead of an iterator
-        return filehandle
-    else:
-        return parser(filehandle)
-
-def get_iterator(forward, reverse=None, interleaved=False):
-    f_iter = open_input(forward)
+    # Wrap pairs if required
     if interleaved:
-        iterator = seq_parsers.interleaved_parser(f_iter)
+        return(interleaved_wrapper(f_iter))
     elif reverse:
-        r_iter = open_input(reverse)
-        iterator = izip(f_iter, r_iter)
+        r_iter = parser(reverse)
+        return(izip(f_iter, r_iter))
     else:
-        iterator = f_iter
+        return(f_iter)
 
-    return iterator
+
+def interleaved_wrapper(file_iter):
+    """Read pairs from a stream (inspired by khmer).
+
+    A generator that yields singletons pairs from a stream of FASTA/FASTQ
+    records.  Yields (r1, r2) where 'r2' is None if is_pair is
+    False.
+
+    Usage::
+
+       for read1, read2 in interleaved_wrapper(...):
+          ...
+    """
+    from seq_qc import pairs
+
+    record = None
+    prev_record = None
+
+    # Handle the majority of the stream.
+    for record in file_iter:
+        if prev_record:
+            if pairs.verify_paired(prev_record, record):
+                yield (prev_record, record) #it's a pair!
+                record = None
+            else: # orphan.
+                raise pairs.UnpairedReadsError("Unpaired reads found. Data "
+                    "may contain orphans or is not ordered properly",
+                    prev_record, record)
+
+        prev_record = record
+        record = None
+
 
 def print_error(message):
     print(textwrap.fill(message, 79), file=sys.stderr)
     sys.exit(1)
 
+
 def program_info(prog, args, version):
     print("{} {!s}".format(prog, version), file=sys.stderr)
     print(textwrap.fill("Command line parameters: {}".format(' '.join(args)), 79), file=sys.stderr)
-
-def logger(loghandle, output):
-    if loghandle:
-        loghandle.write(output)
-
-def fastq_writer(filehandle, record):
-    """
-    Write a record to a fastq file
-    """
-    try:
-        quality = record['quality']
-    except KeyError:
-        print_error("error: could not find quality score information for "
-            "the sequences. Please verfiy that the input file is in fastq "
-            "format.")
-
-    output = ("@{} {}\n{}\n+\n{}\n".format(record['identifier'],
-        record['description'], record['sequence'], quality))
-    if filehandle:
-        filehandle.write(output)
-
-def fasta_writer(filehandle, record):
-    """
-    Write a record to a fasta file
-    """
-    output = (">{} {}\n{}\n".format(record['identifier'], 
-        record['description'], record['sequence']))
-    if filehandle:
-        filehandle.write(output)

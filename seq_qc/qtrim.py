@@ -23,18 +23,22 @@ leaving out the -o argument will cause output to be sent to standard output
 from __future__ import print_function
 from __future__ import division
 
+from arandomness.argparse import CheckThreads, Open
+import argparse
+from multiprocessing import cpu_count, Process, Queue
+from multiprocessing.managers import BaseManager
+from seq_qc import seq_io, trim
+from subprocess import check_output
+import sys
+
 __author__ = "Christopher Thornton"
 __date__ = "2016-11-06"
-__version__ = "1.5.1"
+__version__ = "1.5.9"
 
-import argparse
-import seq_io
-import sys
-import trim
 
 def apply_trimming(record, steps, qual_type, start=0, end=0, trunc=False):
-    qual = record['quality']
-    seq = record['sequence']
+    qual = record.quality
+    seq = record.sequence
     slen = len(seq)
 
     scores = trim.translate_quality(qual, qual_type)
@@ -53,7 +57,8 @@ def apply_trimming(record, steps, qual_type, start=0, end=0, trunc=False):
     else:
         seq, qual = seq[start: last], qual[start: last]
 
-    record['sequence'], record['quality'] = seq, qual
+    record.sequence, record.quality = seq, qual
+
     return record
 
 def parse_colons(argument):
@@ -80,29 +85,36 @@ def parse_colons(argument):
 
     return (window, score)
 
-def parse_commas(argument, argname):
-    argument = [i.lstrip for i in argument.split(",")]
+def parse_commas(args, argname):
+    args = [i.lstrip() for i in args.split(",")]
 
-    if 1> len(argument) > 2:
+    if 1> len(args) > 2:
         seq_io.print_error("error: only one or two integer values should be "
             "provided to {0}".format(argname))
 
     try:
-        arg1 = int(argument[0])
-        arg2 = int(argument[1])
+        arg1 = int(args[0])
+        arg2 = int(args[1])
     except ValueError:
         seq_io.print_error("error: input to {0} must be one or more integer "
                            "values in the form INT or INT,INT".format(argname))
     except IndexError:
-        arg1 = arg2 = int(argument[0])
+        arg1 = arg2 = int(args[0])
 
     return (arg1, arg2)
+
+
+def do_nothing(*args):
+    pass
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('f_file', 
         metavar='in1.fastq',
+        action=Open,
+        mode='r',
+        default=sys.stdin,
         help="input reads in fastq format. Can be a file containing either "
         "single-end or forward/interleaved reads if reads are paired-end "
         "[required]")
@@ -114,21 +126,27 @@ def main():
         action='store_true',
         help="force process as single-end reads even if input is interleaved "
         "paired-end reads")
-    input_arg.add_argument('r_file', 
+    input_arg.add_argument('-r', '--reverse',
+        dest='r_file', 
         metavar='in2.fastq', 
-        nargs='?',
+        action=Open,
+        mode='r',
         help="input reverse reads in fastq format")
     parser.add_argument('-o', '--out', 
         metavar='FILE', 
         dest='out_f',
-        type=seq_io.open_output, 
+        type=str,
+        action=Open,
+        mode='w',
         default=sys.stdout,
-        help="output trimmed reads [required]")
+        help="output trimmed reads [default: stdout]")
     output_arg = parser.add_mutually_exclusive_group(required=False)
     output_arg.add_argument('-v', '--out-reverse', 
         metavar='FILE', 
         dest='out_r',
-        type=seq_io.open_output,
+        type=str,
+        action=Open,
+        mode='w',
         help="output trimmed reverse reads")
     output_arg.add_argument('--out-interleaved', 
         dest='out_interleaved',
@@ -137,17 +155,14 @@ def main():
     parser.add_argument('-s', '--singles', 
         metavar='FILE', 
         dest='out_s',
-        type=seq_io.open_output,
-        help="output trimmed orphaned reads")
-    parser.add_argument('-f', '--out-format', 
-        metavar='FORMAT', 
-        dest='out_format', 
         type=str,
-        choices=['fasta', 'fastq'],
-        default='fastq',
-        help="output files format (fastq or fasta) [default: fastq]")
+        action=Open,
+        mode='w',
+        help="output trimmed orphaned reads")
     parser.add_argument('-l', '--log',
-        type=seq_io.open_output,
+        type=str,
+        action=Open,
+        mode='w',
         help="output log file to keep track of trimmed sequences")
     parser.add_argument('-q', '--qual-type', 
         metavar='TYPE', 
@@ -161,9 +176,8 @@ def main():
         metavar='LEN [,LEN]', 
         dest='minlen',
         type=str, 
-        default='0',
         help="filter reads shorter than the minimum length threshold [default:"
-             " off]. Different values can be provided for the forward and "
+             " 0]. Different values can be provided for the forward and "
              "reverse reads, respectively, by separating them with a comma "
              "(e.g. 80,60), or a single value can be provided for both")
     trim_args = parser.add_argument_group('trimming options')
@@ -186,19 +200,17 @@ def main():
     trim_args.add_argument('-H', '--headcrop', 
         metavar='INT [,INT]',
         type=str,
-        default='0',
         help="remove exactly the number of bases specified from the start of "
-        "the reads. Different values can be provided for the forward and "
-        "reverse reads, respectively, by separating them with a comma "
-        "(e.g. 2,0), or a single value can be provided for both")
+        "the reads [default: off]. Different values can be provided for the "
+        "forward and reverse reads, respectively, by separating them with a "
+        "comma (e.g. 2,0), or a single value can be provided for both")
     trim_args.add_argument('-C', '--crop', 
         metavar='INT [,INT]',
         type=str,
-        default='0',
         help="remove exactly the number of bases specified from the end of "
-        "the reads. Different values can be provided for the forward and "
-        "reverse reads, respectively, by separating them with a comma "
-        "(e.g. 2,0), or a single value can be provided for both")
+        "the reads [default: off]. Different values can be provided for the "
+        "forward and reverse reads, respectively, by separating them with a "
+        "comma (e.g. 2,0), or a single value can be provided for both")
     trim_args.add_argument('-L', '--leading', 
         metavar='SCORE', 
         dest='lead_score',
@@ -212,31 +224,36 @@ def main():
     trim_args.add_argument('--trunc-n', 
         dest='trunc_n',
         action='store_true',
-        help="truncate sequence at position of first ambiguous base")
+        help="truncate sequence at position of first ambiguous base [default: "
+             "off]")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
+    parser.add_argument('-t', '--threads',
+        action=CheckThreads,
+        type=int,
+        default=1,
+        help='number of threads to use for trimming [default: 1]')
     args = parser.parse_args()
     all_args = sys.argv[1:]
 
     seq_io.program_info('qtrim', all_args, __version__)
 
-    # Assign variables based on arguments supplied by the user
-    fcrop, rcrop = parse_commas(args.crop, "crop")
-    fheadcrop, rheadcrop = parse_commas(args.headcrop, "headcrop")
-    fminlen, rminlen = parse_commas(args.minlen, "minlen")
-    f_file = sys.stdin if args.f_file == '-' else args.f_file
-    out_f = args.out_f
-    writer = seq_io.fasta_writer if (args.out_format == 'fasta') else \
-        seq_io.fastq_writer
-    paired = True if (args.interleaved or args.r_file) else False
-
-    # Prepare the iterator based on dataset type
-    iterator = seq_io.get_iterator(f_file, args.r_file, args.interleaved)
-
+    # Fail if insufficient directive supplied
     if args.r_file and not (args.out_r or args.out_interleaved):
         parser.error("one of -v/--out-reverse or --out-interleaved is required "
             "when the argument -r/--reverse is used")
+
+    # Assign variables based on arguments supplied by the user
+    fcrop, rcrop = parse_commas(args.crop, "crop") if args.crop else (0, 0)
+    fheadcrop, rheadcrop = parse_commas(args.headcrop, "headcrop") if args.headcrop else (0, 0)
+    fminlen, rminlen = parse_commas(args.minlen, "minlen") if args.minlen else (0, 0)
+    out_f = args.out_f.write
+    logger = args.log.write if args.log else do_nothing
+    paired = True if (args.interleaved or args.r_file) else False
+
+    # Prepare the iterator based on dataset type
+    iterator = seq_io.read_iterator(args.f_file, args.r_file, args.interleaved)
 
     # Populate list of trimming tasks to perform on reads
     trim_tasks = {'l': (trim.trim_leading, args.lead_score), 
@@ -254,46 +271,47 @@ def main():
     # Check dataset type (paired or single-end) 
     if paired:
         print("\nProcessing input as paired-end reads", file=sys.stderr)
-        seq_io.logger(args.log, "Record\tForward length\tForward trimmed "
+        logger("Record\tForward length\tForward trimmed "
             "length\tReverse length\tReverse trimmed length\n")
 
-        out_s = args.out_s if args.out_s else None
+        out_s = args.out_s.write if args.out_s else do_nothing
         out_r = out_f if ((args.interleaved or args.out_interleaved) and not \
-            args.out_r) else args.out_r
+            args.out_r) else args.out_r.write
 
-        # Run trimming steps on paired-end reads
+        # Iterate over paired reads, populating queue for trimming
         pairs_passed = discarded_pairs = fsingles = rsingles = 0
-        for i, (forward, reverse) in enumerate(iterator):
-            identifier = forward['identifier']
-            forig = len(forward['sequence'])
-            rorig = len(reverse['sequence'])
+        for i, record in enumerate(iterator):
+            forward, reverse = record
+            identifier = forward.id
+            forig = len(forward.sequence)
+            rorig = len(reverse.sequence)
 
             forward = apply_trimming(forward, trim_steps, args.qual_type, 
                 fheadcrop, fcrop, args.trunc_n)
-            ftrim = len(forward['sequence'])
+            ftrim = len(forward.sequence)
 
             reverse = apply_trimming(reverse, trim_steps, args.qual_type, 
                 rheadcrop, rcrop, args.trunc_n)
-            rtrim = len(reverse['sequence'])
+            rtrim = len(reverse.sequence)
 
             # Both read pairs passed length threshold
             if ftrim >= fminlen and rtrim >= rminlen:
                 pairs_passed += 1
-                writer(out_f, forward)
-                writer(out_r, reverse)
+                out_f(forward.write())
+                out_r(reverse.write())
             # Forward reads orphaned, reverse reads failed length threshold
             elif ftrim >= fminlen and rtrim < rminlen:
                 fsingles += 1
-                writer(out_s, forward)
+                out_s(forward.write())
             # Reverse reads orphaned, forward reads failed length threshold
             elif ftrim < fminlen and rtrim >= rminlen:
                 rsingles += 1
-                writer(out_s, reverse)
+                out_s(reverse.write())
             # Both read pairs failed length threshold and were discarded
             else:
                 discarded_pairs += 1
 
-            seq_io.logger(args.log, "{}\t{}\t{}\t{}\t{}\n".format(identifier, 
+            logger("{}\t{}\t{}\t{}\t{}\n".format(identifier, 
                 forig, ftrim, rorig, rtrim))
 
         try:
@@ -312,9 +330,9 @@ def main():
             discarded_pairs, discarded_pairs / i), file=sys.stderr)
 
     else:
-        # Run trimming steps on single-end reads
+        # Iterate over single-end reads, populating queue for trimming
         print("\nProcessing input as single-end reads", file=sys.stderr)
-        seq_io.logger(args.log, "Record\tLength\tTrimmed length\n")
+        logger("Record\tLength\tTrimmed length\n")
 
         if args.out_s:
             print("\nwarning: argument --singles used with single-end reads"
@@ -323,27 +341,27 @@ def main():
         discarded = 0
         for i, record in enumerate(iterator):
             if i == 0:
-                first_read = record['identifier']
+                first_read = record.id
             elif i == 1:
-                if first_read == record['identifier'] and not args.force:
+                if first_read == record.id and not args.force:
                     seq_io.print_error("warning: the input fastq appears to "
                         "contain interleaved paired-end reads. Please run with "
                         "the --force flag to proceed with processing the data "
                         "as single-end reads")
 
-            origlen = len(record['sequence'])
+            origlen = len(record.sequence)
             record = apply_trimming(record, trim_steps, args.qual_type,
                 fheadcrop, fcrop, args.trunc_n)
-            trimlen = len(record['sequence'])
+            trimlen = len(record.sequence)
             
             # Record passed length threshold
             if trimlen >= fminlen:
-                writer(out_f, record)
+                out_f(record.write())
             # Record failed length threshold and was discarded
             else:
                 discarded += 1
 
-            seq_io.logger(args.log, "{}\t{}\t{}\n".format(record['identifier'],
+            logger("{}\t{}\t{}\n".format(record.id,
                 origlen, trimlen))
 
         try:
