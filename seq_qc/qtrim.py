@@ -79,7 +79,7 @@ def parse_sw_arg(argument):
 
     return (window, score)
 
-def get_list(argument):
+def parse_commas(argument):
     try:
         argument = [abs(int(i.lstrip())) for i in argument.split(",")]
     except ValueError:
@@ -152,7 +152,7 @@ def main():
     parser.add_argument('-m', '--min-len', 
         metavar='LEN [,LEN]', 
         dest='minlen',
-        type=get_list, 
+        type=parse_commas, 
         default='0',
         help="filter reads shorter than the minimum length threshold [default:"
              " off]. Different values can be provided for the forward and "
@@ -176,7 +176,7 @@ def main():
         "read length")
     trim_args.add_argument('-H', '--headcrop', 
         metavar='INT [,INT]',
-        type=get_list, 
+        type=parse_commas, 
         default='0',
         help="remove exactly the number of bases specified from the start of "
         "the reads. Different values can be provided for the forward and "
@@ -184,7 +184,7 @@ def main():
         "(e.g. 2,0), or a single value can be provided for both")
     trim_args.add_argument('-C', '--crop', 
         metavar='INT [,INT]',
-        type=get_list, 
+        type=parse_commas, 
         default='0',
         help="remove exactly the number of bases specified from the end of "
         "the reads. Different values can be provided for the forward and "
