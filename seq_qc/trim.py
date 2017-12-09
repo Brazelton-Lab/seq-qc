@@ -1,5 +1,6 @@
 from __future__ import division
-from seq_io import print_error
+
+from seq_qc.seq_io import print_error
 import sys
 
 def translate_quality(quals, encoding=33):
