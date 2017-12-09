@@ -56,7 +56,7 @@ def apply_trimming(record, steps, qual_type, start=0, end=0, trunc=False):
     record['sequence'], record['quality'] = seq, qual
     return record
 
-def parse_sw_arg(argument):
+def parse_colons(argument):
     try:
         window, score = argument.split(':')
     except ValueError:
@@ -168,7 +168,7 @@ def main():
     trim_args.add_argument('-W', '--sliding-window', 
         metavar='FRAME',
         dest='sw',
-        type=parse_sw_arg,
+        type=parse_colons,
         help="trim both 5' and 3' ends of a read using a sliding window "
         "approach. Input should be of the form 'window_size:qual_threshold', "
         "where 'qual_threshold' is an integer between 0 and 42 and "
