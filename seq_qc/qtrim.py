@@ -94,7 +94,8 @@ def get_list(argument):
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('f_file', metavar='in1.fastq',
+    parser.add_argument('f_file', 
+        metavar='in1.fastq',
         help="input reads in fastq format. Can be a file containing either "
         "single-end or forward/interleaved reads if reads are paired-end "
         "[required]")
@@ -106,45 +107,66 @@ def main():
         action='store_true',
         help="force process as single-end reads even if input is interleaved "
         "paired-end reads")
-    input_arg.add_argument('r_file', metavar='in2.fastq', nargs='?',
+    input_arg.add_argument('r_file', 
+        metavar='in2.fastq', 
+        nargs='?',
         help="input reverse reads in fastq format")
-    parser.add_argument('-o', '--out', metavar='FILE', dest='out_f',
-        type=seq_io.open_output, default=sys.stdout,
+    parser.add_argument('-o', '--out', 
+        metavar='FILE', 
+        dest='out_f',
+        type=seq_io.open_output, 
+        default=sys.stdout,
         help="output trimmed reads [required]")
     output_arg = parser.add_mutually_exclusive_group(required=False)
-    output_arg.add_argument('-v', '--out-reverse', metavar='FILE', dest='out_r',
+    output_arg.add_argument('-v', '--out-reverse', 
+        metavar='FILE', 
+        dest='out_r',
         type=seq_io.open_output,
         help="output trimmed reverse reads")
-    output_arg.add_argument('--out-interleaved', dest='out_interleaved',
+    output_arg.add_argument('--out-interleaved', 
+        dest='out_interleaved',
         action='store_true',
         help="output interleaved paired-end reads, even if input is split")
-    parser.add_argument('-s', '--singles', metavar='FILE', dest='out_s',
+    parser.add_argument('-s', '--singles', 
+        metavar='FILE', 
+        dest='out_s',
         type=seq_io.open_output,
         help="output trimmed orphaned reads")
-    parser.add_argument('-f', '--out-format', metavar='FORMAT', 
-        dest='out_format', default='fastq',
+    parser.add_argument('-f', '--out-format', 
+        metavar='FORMAT', 
+        dest='out_format', 
         choices=['fasta', 'fastq'],
+        default='fastq',
         help="output files format (fastq or fasta) [default: fastq]")
     parser.add_argument('-l', '--log',
         type=seq_io.open_output,
         help="output log file to keep track of trimmed sequences")
-    parser.add_argument('-q', '--qual-type', metavar='TYPE', dest='qual_type',
-        type=int, default=33,
+    parser.add_argument('-q', '--qual-type', 
+        metavar='TYPE', 
+        dest='qual_type',
+        type=int, 
         choices=[33, 64],
+        default=33,
         help="ASCII base quality score encoding [default: 33]. Options are "
             "33 (for phred33) or 64 (for phred64)")
-    parser.add_argument('-m', '--min-len', metavar='LEN', dest='minlen',
-        type=get_list, default='0',
-        help="filter reads shorter than the minimum length threshold "
-        "[default: 0,0]. Different values can be provided for the forward and "
-        "reverse reads by separating them with a comma (e.g. 80,60)")
+    parser.add_argument('-m', '--min-len', 
+        metavar='LEN [,LEN]', 
+        dest='minlen',
+        type=get_list, 
+        default='0',
+        help="filter reads shorter than the minimum length threshold [default:"
+             " off]. Different values can be provided for the forward and "
+             "reverse reads, respectively, by separating them with a comma "
+             "(e.g. 80,60), or a single value can be provided for both")
     trim_args = parser.add_argument_group('trimming options')
-    trim_args.add_argument('-O', '--trim-order', metavar='ORDER',
+    trim_args.add_argument('-O', '--trim-order', 
+        metavar='ORDER',
         dest='trim_order',
         default='ltw',
         help="order of trimming steps [default: ltw (corresponds to leading, "
         "trailing, and sliding-window)]")
-    trim_args.add_argument('-W', '--sliding-window', metavar='FRAME',
+    trim_args.add_argument('-W', '--sliding-window', 
+        metavar='FRAME',
         dest='sw',
         type=parse_sw_arg,
         help="trim both 5' and 3' ends of a read using a sliding window "
@@ -152,25 +174,34 @@ def main():
         "where 'qual_threshold' is an integer between 0 and 42 and "
         "'window_size' can either be length in bases or fraction of the total "
         "read length")
-    trim_args.add_argument('-H', '--headcrop', metavar='INT,INT',
-        type=get_list, default='0',
+    trim_args.add_argument('-H', '--headcrop', 
+        metavar='INT [,INT]',
+        type=get_list, 
+        default='0',
         help="remove exactly the number of bases specified from the start of "
-        "the read. Different values can be provided for the forward and "
-        "reverse reads by separating them with a comma (e.g. 2,0)")
-    trim_args.add_argument('-C', '--crop', metavar='INT,INT',
-        type=get_list, default='0',
+        "the reads. Different values can be provided for the forward and "
+        "reverse reads, respectively, by separating them with a comma "
+        "(e.g. 2,0), or a single value can be provided for both")
+    trim_args.add_argument('-C', '--crop', 
+        metavar='INT [,INT]',
+        type=get_list, 
+        default='0',
         help="remove exactly the number of bases specified from the end of "
-        "the read. Different values can be provided for the forward and "
-        "reverse reads by separating them with a comma (e.g. 2,0)")
-    trim_args.add_argument('-L', '--leading', metavar='SCORE', 
+        "the reads. Different values can be provided for the forward and "
+        "reverse reads, respectively, by separating them with a comma "
+        "(e.g. 2,0), or a single value can be provided for both")
+    trim_args.add_argument('-L', '--leading', 
+        metavar='SCORE', 
         dest='lead_score',
         type=int,
         help="trim by removing low quality bases from the start of the read")
-    trim_args.add_argument('-T', '--trailing', metavar='SCORE', 
+    trim_args.add_argument('-T', '--trailing', 
+        metavar='SCORE', 
         dest='trail_score',
         type=int,
         help="trim by removing low quality bases from the end of the read")
-    trim_args.add_argument('--trunc-n', dest='trunc_n',
+    trim_args.add_argument('--trunc-n', 
+        dest='trunc_n',
         action='store_true',
         help="truncate sequence at the position of the first ambiguous base")
     parser.add_argument('--version',
