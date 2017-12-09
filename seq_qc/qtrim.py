@@ -221,20 +221,24 @@ def main():
 
     seq_io.program_info('qtrim', all_args, __version__)
 
-    # Assign arguments
+    # Assign variables based on arguments supplied by the user
     fcrop, rcrop = parse_commas(args.crop, "crop")
     fheadcrop, rheadcrop = parse_commas(args.headcrop, "headcrop")
     fminlen, rminlen = parse_commas(args.minlen, "minlen")
     f_file = sys.stdin if args.f_file == '-' else args.f_file
     out_f = args.out_f
+    writer = seq_io.fasta_writer if (args.out_format == 'fasta') else \
+        seq_io.fastq_writer
+    paired = True if (args.interleaved or args.r_file) else False
 
-    # Prepare the iterator, either 
+    # Prepare the iterator based on dataset type
     iterator = seq_io.get_iterator(f_file, args.r_file, args.interleaved)
 
     if args.r_file and not (args.out_r or args.out_interleaved):
         parser.error("one of -v/--out-reverse or --out-interleaved is required "
             "when the argument -r/--reverse is used")
 
+    # Populate list of trimming tasks to perform on reads
     trim_tasks = {'l': (trim.trim_leading, args.lead_score), 
         't': (trim.trim_trailing, args.trail_score), 
         'w': (trim.adaptive_trim, args.sw)}
@@ -245,13 +249,9 @@ def main():
         if value:
             trim_steps.append(trim_tasks[task])
     if len(trim_steps) < 1 and not (args.crop or args.headcrop):
-        seq_io.print_error("error: no trimming steps were applied")
+        seq_io.print_error("error: no trimming steps were specified")
 
-    writer = seq_io.fasta_writer if (args.out_format == 'fasta') else \
-        seq_io.fastq_writer
-
-    paired = True if (args.interleaved or args.r_file) else False
- 
+    # Check dataset type (paired or single-end) 
     if paired:
         print("\nProcessing input as paired-end reads", file=sys.stderr)
         seq_io.logger(args.log, "Record\tForward length\tForward trimmed "
@@ -261,6 +261,7 @@ def main():
         out_r = out_f if ((args.interleaved or args.out_interleaved) and not \
             args.out_r) else args.out_r
 
+        # Run trimming steps on paired-end reads
         pairs_passed = discarded_pairs = fsingles = rsingles = 0
         for i, (forward, reverse) in enumerate(iterator):
             identifier = forward['identifier']
@@ -275,20 +276,20 @@ def main():
                 rheadcrop, rcrop, args.trunc_n)
             rtrim = len(reverse['sequence'])
 
-            # both good
+            # Both read pairs passed length threshold
             if ftrim >= fminlen and rtrim >= rminlen:
                 pairs_passed += 1
                 writer(out_f, forward)
                 writer(out_r, reverse)
-            # forward orphaned, reverse filtered
+            # Forward reads orphaned, reverse reads failed length threshold
             elif ftrim >= fminlen and rtrim < rminlen:
                 fsingles += 1
                 writer(out_s, forward)
-            # reverse orphaned, forward filtered
+            # Reverse reads orphaned, forward reads failed length threshold
             elif ftrim < fminlen and rtrim >= rminlen:
                 rsingles += 1
                 writer(out_s, reverse)
-            # both discarded
+            # Both read pairs failed length threshold and were discarded
             else:
                 discarded_pairs += 1
 
@@ -311,6 +312,7 @@ def main():
             discarded_pairs, discarded_pairs / i), file=sys.stderr)
 
     else:
+        # Run trimming steps on single-end reads
         print("\nProcessing input as single-end reads", file=sys.stderr)
         seq_io.logger(args.log, "Record\tLength\tTrimmed length\n")
 
@@ -334,8 +336,10 @@ def main():
                 fheadcrop, fcrop, args.trunc_n)
             trimlen = len(record['sequence'])
             
+            # Record passed length threshold
             if trimlen >= fminlen:
                 writer(out_f, record)
+            # Record failed length threshold and was discarded
             else:
                 discarded += 1
 
@@ -345,8 +349,8 @@ def main():
         try:
             i += 1
         except UnboundLocalError:
-            seq_io.print_error("error: no sequences were found to process. Is "
-                "the input properly formatted?")
+            seq_io.print_error("error: no sequences were found to process. "
+                               "Please check formatting of the inputs")
  
         passed = i - discarded
         print("\nRecords processed:\t{!s}\nPassed filtering:\t{!s} "
