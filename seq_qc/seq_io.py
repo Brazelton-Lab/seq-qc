@@ -2,14 +2,16 @@ from __future__ import print_function
 
 from arandomness.argparse import Open
 from bio_utils.iterators import fasta_iter, fastq_iter
+import bz2
+import gzip
+import io
 import sys
 import textwrap
 
 
-def read_iterator(forward, reverse=None, interleaved=False):
-    """Determines file format of the reads, if possible, and generates an
-    object to iterate over. If reads are paired-end, each record will
-    contain both the forward and reverse sequences of the pair.
+def read_iterator(forward, reverse=None, interleaved=False, f_format='fastq'):
+    """Generates an object to iterate over. If reads are paired-end, each 
+    record will contain both the forward and reverse sequences of the pair.
     """
     try:
         # Python2
@@ -18,28 +20,21 @@ def read_iterator(forward, reverse=None, interleaved=False):
         # Python3
         izip = zip
 
-    # Guess at the format of the input read files
-#    peek_first = forward.peek(1)
-#    print(peek_first[0])
-#    try:
-#        if peek[0] == '>':
-#             parser = fasta_iter
-#        elif peek[0] == '@':
-#             parser = fastq_iter
-#    except IndexError as err:
-#        print_error("error: unable to determine format of {}".format(forward))
+    if f_format == 'fasta':
+        parser = fasta_iter
+    elif f_format == 'fastq':
+        parser = fastq_iter
 
-    parser = fastq_iter
     f_iter = parser(forward)
 
     # Wrap pairs if required
     if interleaved:
-        return(interleaved_wrapper(f_iter))
+        return interleaved_wrapper(f_iter)
     elif reverse:
         r_iter = parser(reverse)
-        return(izip(f_iter, r_iter))
+        return izip(f_iter, r_iter)
     else:
-        return(f_iter)
+        return f_iter
 
 
 def interleaved_wrapper(file_iter):
