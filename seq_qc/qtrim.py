@@ -27,6 +27,7 @@ from arandomness.argparse import CheckThreads, Open
 import argparse
 from multiprocessing import cpu_count, Process, Queue
 from multiprocessing.managers import BaseManager
+from seq_qc.pairs import verify_paired
 from seq_qc import seq_io, trim
 from subprocess import check_output
 import sys
@@ -35,32 +36,40 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv2'
 __maintainer__ = 'Christopher Thornton'
 __version__ = "2.0.0"
+__status__ = "Production"
 
 
-def apply_trimming(record, steps, qual_type, start=0, end=0, trunc=False):
-    qual = record.quality
-    seq = record.sequence
-    slen = len(seq)
+def apply_trimming(record, steps, crop, start=0, qual_type=33):
+    """Apply user-specified trimming steps"""
+    qscores = record.quality
+    seqlen = len(qscores)
+    lastbase = seqlen if not crop or (crop > seqlen) else crop
 
-    scores = trim.translate_quality(qual, qual_type)
+    end = 0  #intial number of bases to remove from end
+    scores = trim.translate_quality(qscores, qual_type)
     for step, value in steps:
-        newstart, newend = step(scores[start: slen - end], value)
+        newstart, newend = step(scores[start: lastbase - end], value)
         start += newstart
         end += newend
 
-    last = slen - end
-    if trunc:
-        try:
-            nstart = seq[start: last].index('N')
-        except ValueError:
-            nstart = last
-        seq, qual = seq[start: nstart], qual[start: nstart]
-    else:
-        seq, qual = seq[start: last], qual[start: last]
+    last = seqlen - end
 
-    record.sequence, record.quality = seq, qual
+    record.sequence, record.quality = record.sequence[start: last], \
+        record.quality[start: last]
 
     return record
+
+
+def truncate_by_n(record):
+    """Truncate reads at the first position containing an ambiguous base"""
+    try:
+        nstart = record.sequence.index('N')
+        record.sequence, record.quality = record.sequence[0: nstart], \
+            record.quality[0: nstart]
+        return record
+    except ValueError:
+        return record
+
 
 def parse_colons(argument):
     try:
@@ -86,6 +95,7 @@ def parse_colons(argument):
 
     return (window, score)
 
+
 def parse_commas(args, argname):
     args = [i.lstrip() for i in args.split(",")]
 
@@ -107,6 +117,11 @@ def parse_commas(args, argname):
 
 def do_nothing(*args):
     pass
+
+
+def as_is(args):
+    return args
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
@@ -209,10 +224,12 @@ def main():
     trim_args.add_argument('-C', '--crop', 
         metavar='INT [,INT]',
         type=str,
-        help="remove exactly the number of bases specified from the end of "
-        "the reads [default: off]. Different values can be provided for the "
-        "forward and reverse reads, respectively, by separating them with a "
-        "comma (e.g. 2,0), or a single value can be provided for both")
+        help="crop reads to the specified position [default: off]. The "
+        "value(s) should be less than the maximum length of the reads in the "
+        "dataset, otherwise no cropping will be applied. Different values can "
+        "be provided for the forward and reverse reads, respectively, by "
+        "separating them with a comma (e.g. 120,115), or a single value can "
+        "be provided for both")
     trim_args.add_argument('-L', '--leading', 
         metavar='SCORE', 
         dest='lead_score',
@@ -247,16 +264,19 @@ def main():
             "when the argument -r/--reverse is used")
 
     # Assign variables based on arguments supplied by the user
-    fcrop, rcrop = parse_commas(args.crop, "crop") if args.crop else (0, 0)
-    fheadcrop, rheadcrop = parse_commas(args.headcrop, "headcrop") if args.headcrop else (0, 0)
-    fminlen, rminlen = parse_commas(args.minlen, "minlen") if args.minlen else (0, 0)
+    crop = parse_commas(args.crop, "crop") if args.crop else (None, None)
+    hcrop = parse_commas(args.headcrop, "headcrop") if \
+        args.headcrop else (0, 0)
+    minlen1, minlen2 = parse_commas(args.minlen, "minlen") if args.minlen \
+        else (0, 0)
     out_f = args.out_f.write
     logger = args.log.write if args.log else do_nothing
     paired = True if (args.interleaved or args.rhandle) else False
+    trunc_n = truncate_by_n if args.trunc_n else as_is
 
     # Prepare the iterator based on dataset type
-    print(args.fhandle, args.rhandle)
-    iterator = seq_io.read_iterator(args.fhandle, args.rhandle, args.interleaved)
+    iterator = seq_io.read_iterator(args.fhandle, args.rhandle, \
+        args.interleaved)
 
     # Populate list of trimming tasks to perform on reads
     trim_tasks = {'l': (trim.trim_leading, args.lead_score), 
@@ -274,107 +294,84 @@ def main():
     # Check dataset type (paired or single-end) 
     if paired:
         print("\nProcessing input as paired-end reads", file=sys.stderr)
-        logger("Record\tForward length\tForward trimmed "
-            "length\tReverse length\tReverse trimmed length\n")
+        logger("Record\tForward\tForward Trimmed\tReverse\tReverse Trimmed\n")
 
         out_s = args.out_s.write if args.out_s else do_nothing
         out_r = out_f if ((args.interleaved or args.out_interleaved) and not \
             args.out_r) else args.out_r.write
 
-        # Iterate over paired reads, populating queue for trimming
-        pairs_passed = discarded_pairs = fsingles = rsingles = 0
-        for i, record in enumerate(iterator):
-            forward, reverse = record
-            identifier = forward.id
-            forig = len(forward.sequence)
-            rorig = len(reverse.sequence)
+        output = outpaired
 
-            forward = apply_trimming(forward, trim_steps, args.qual_type, 
-                fheadcrop, fcrop, args.trunc_n)
-            ftrim = len(forward.sequence)
-
-            reverse = apply_trimming(reverse, trim_steps, args.qual_type, 
-                rheadcrop, rcrop, args.trunc_n)
-            rtrim = len(reverse.sequence)
-
-            # Both read pairs passed length threshold
-            if ftrim >= fminlen and rtrim >= rminlen:
-                pairs_passed += 1
-                out_f(forward.write())
-                out_r(reverse.write())
-            # Forward reads orphaned, reverse reads failed length threshold
-            elif ftrim >= fminlen and rtrim < rminlen:
-                fsingles += 1
-                out_s(forward.write())
-            # Reverse reads orphaned, forward reads failed length threshold
-            elif ftrim < fminlen and rtrim >= rminlen:
-                rsingles += 1
-                out_s(reverse.write())
-            # Both read pairs failed length threshold and were discarded
-            else:
-                discarded_pairs += 1
-
-            logger("{}\t{}\t{}\t{}\t{}\n".format(identifier, 
-                forig, ftrim, rorig, rtrim))
-
-        try:
-            i += 1
-        except UnboundLocalError:
-            seq_io.print_error("error: no sequences were found to process")
-
-        total = i * 2
-        passed = pairs_passed * 2 + fsingles + rsingles
-        print("\nRecords processed:\t{!s} ({!s} pairs)\nPassed filtering:\t"
-            "{!s} ({:.2%})\n  Paired reads kept:\t{!s} ({:.2%})\n  Forward "
-            "only kept:\t{!s} ({:.2%})\n  Reverse only kept:\t{!s} ({:.2%})"
-            "\nRead pairs discarded:\t{!s} ({:.2%})\n".format(total, i,
-            passed, passed / total, pairs_passed, pairs_passed / i,
-            fsingles, fsingles / total, rsingles, rsingles / total,
-            discarded_pairs, discarded_pairs / i), file=sys.stderr)
+        passed = singles1 = singles2 = 0
 
     else:
-        # Iterate over single-end reads, populating queue for trimming
         print("\nProcessing input as single-end reads", file=sys.stderr)
-        logger("Record\tLength\tTrimmed length\n")
+        logger("Record\tOriginal\tTrimmed\n")
 
         if args.out_s:
             print("\nwarning: argument --singles used with single-end reads"
                 "... ignoring\n", file=sys.stderr)
 
-        discarded = 0
-        for i, record in enumerate(iterator):
-            if i == 0:
-                first_read = record.id
-            elif i == 1:
-                if first_read == record.id and not args.force:
-                    seq_io.print_error("warning: the input fastq appears to "
-                        "contain interleaved paired-end reads. Please run with "
-                        "the --force flag to proceed with processing the data "
-                        "as single-end reads")
+        output = outsingles
 
-            origlen = len(record.sequence)
-            record = apply_trimming(record, trim_steps, args.qual_type,
-                fheadcrop, fcrop, args.trunc_n)
-            trimlen = len(record.sequence)
-            
-            # Record passed length threshold
-            if trimlen >= fminlen:
-                out_f(record.write())
-            # Record failed length threshold and was discarded
-            else:
-                discarded += 1
+    # Iterate over reads, populating queue for trimming
+    discarded = 0
+    for i, records in enumerate(iterator):
 
-            logger("{}\t{}\t{}\n".format(record.id,
-                origlen, trimlen))
+        trimmed = []
+        for j, record in enumerate(records):
+            record = apply_trimming(record, trim_steps, crop[j], hcrop[j],
+                args.qual_type)
+            trimmed.append(trunc_n(record))
 
-        try:
-            i += 1
-        except UnboundLocalError:
-            seq_io.print_error("error: no sequences were found to process. "
-                               "Please check formatting of the inputs")
- 
-        passed = i - discarded
-        print("\nRecords processed:\t{!s}\nPassed filtering:\t{!s} "
+        trimlen = [len(k.sequence) for k in trimmed]
+
+        # Both read pairs passed length threshold
+        if trimlen[0] >= minlen1 and trimlen[1] >= minlen2:
+            passed += 1
+            out_f(trimmed[0].write())
+            out_r(trimmed[1].write())
+        # Forward reads orphaned, reverse reads failed length threshold
+        elif trimlen[0] >= minlen1 and trimlen[1] < minlen2:
+            singles1 += 1
+            out_s(trimmed[0].write())
+        # Reverse reads orphaned, forward reads failed length threshold
+        elif trimlen[0] < minlen1 and trimlen[1] >= minlen2:
+            singles2 += 1
+            out_s(trimmed[1].write())
+        # Both read pairs failed length threshold and were discarded
+        else:
+            discarded += 1
+
+        # Record passed length threshold
+        if trimlen >= minlen1:
+            out_f(record.write())
+        # Record failed length threshold and was discarded
+        else:
+            discarded += 1
+
+        logger("{}\t{}\t{}\t{}\t{}\n".format(records[0].id, 
+            len(records[0].sequence), trimlen1, len(records[1].sequence), trimlen2))
+        logger("{}\t{}\t{}\n".format(records[0].id,
+            origlen, trimlen1))
+
+    try:
+        i += 1
+    except UnboundLocalError:
+        seq_io.print_error("error: no sequences were found to process")
+
+    total = i * 2
+    passed = passed * 2 + fsingles + rsingles
+    print("\nRecords processed:\t{!s} ({!s} pairs)\nPassed filtering:\t"
+        "{!s} ({:.2%})\n  Paired reads kept:\t{!s} ({:.2%})\n  Forward "
+        "only kept:\t{!s} ({:.2%})\n  Reverse only kept:\t{!s} ({:.2%})"
+        "\nRead pairs discarded:\t{!s} ({:.2%})\n".format(total, i,
+        passed, passed / total, pairs_passed, pairs_passed / i,
+        fsingles, fsingles / total, rsingles, rsingles / total,
+        discarded_pairs, discarded_pairs / i), file=sys.stderr)
+
+    passed = i - discarded
+    print("\nRecords processed:\t{!s}\nPassed filtering:\t{!s} "
         "({:.2%})\nRecords discarded:\t{!s} ({:.2%})\n".format(i, passed,
         passed / i, discarded, discarded / i), file=sys.stderr)
 
