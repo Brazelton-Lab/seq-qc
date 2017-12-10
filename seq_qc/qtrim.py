@@ -32,8 +32,9 @@ from subprocess import check_output
 import sys
 
 __author__ = "Christopher Thornton"
-__date__ = "2016-11-06"
-__version__ = "1.5.9"
+__license__ = 'GPLv2'
+__maintainer__ = 'Christopher Thornton'
+__version__ = "2.0.0"
 
 
 def apply_trimming(record, steps, qual_type, start=0, end=0, trunc=False):
@@ -110,10 +111,11 @@ def do_nothing(*args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('f_file', 
+    parser.add_argument('fhandle', 
         metavar='in1.fastq',
+        type=str,
         action=Open,
-        mode='r',
+        mode='rb',
         default=sys.stdin,
         help="input reads in fastq format. Can be a file containing either "
         "single-end or forward/interleaved reads if reads are paired-end "
@@ -127,7 +129,7 @@ def main():
         help="force process as single-end reads even if input is interleaved "
         "paired-end reads")
     input_arg.add_argument('-r', '--reverse',
-        dest='r_file', 
+        dest='rhandle', 
         metavar='in2.fastq', 
         action=Open,
         mode='r',
@@ -240,7 +242,7 @@ def main():
     seq_io.program_info('qtrim', all_args, __version__)
 
     # Fail if insufficient directive supplied
-    if args.r_file and not (args.out_r or args.out_interleaved):
+    if args.rhandle and not (args.out_r or args.out_interleaved):
         parser.error("one of -v/--out-reverse or --out-interleaved is required "
             "when the argument -r/--reverse is used")
 
@@ -250,10 +252,11 @@ def main():
     fminlen, rminlen = parse_commas(args.minlen, "minlen") if args.minlen else (0, 0)
     out_f = args.out_f.write
     logger = args.log.write if args.log else do_nothing
-    paired = True if (args.interleaved or args.r_file) else False
+    paired = True if (args.interleaved or args.rhandle) else False
 
     # Prepare the iterator based on dataset type
-    iterator = seq_io.read_iterator(args.f_file, args.r_file, args.interleaved)
+    print(args.fhandle, args.rhandle)
+    iterator = seq_io.read_iterator(args.fhandle, args.rhandle, args.interleaved)
 
     # Populate list of trimming tasks to perform on reads
     trim_tasks = {'l': (trim.trim_leading, args.lead_score), 
