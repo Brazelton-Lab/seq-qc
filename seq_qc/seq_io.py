@@ -9,6 +9,21 @@ import sys
 import textwrap
 
 
+class Paired:
+    """A wrapper to FastaEntry and FastqEntry classes for paired reads. 
+
+    Attributes:
+        forward (class): first read of the pair
+        
+        reverse (class): second read of the pair
+    """
+    def __init__(self, forward, reverse):
+        """Attributes to store paired entry data"""
+
+        self.forward = forward
+        self.reverse = reverse
+
+
 def read_iterator(forward, reverse=None, interleaved=False, f_format='fastq'):
     """Generates an object to iterate over. If reads are paired-end, each 
     record will contain both the forward and reverse sequences of the pair.
@@ -29,15 +44,15 @@ def read_iterator(forward, reverse=None, interleaved=False, f_format='fastq'):
 
     # Wrap pairs if required
     if interleaved:
-        return interleaved_wrapper(f_iter)
+        return handle_interleaved(f_iter)
     elif reverse:
         r_iter = parser(reverse)
-        return izip(f_iter, r_iter)
+        return Paired(f_iter, r_iter)
     else:
-        return f_iter
+        return (f_iter)
 
 
-def interleaved_wrapper(file_iter):
+def handle_interleaved(file_iter):
     """Read pairs from a stream (inspired by khmer).
 
     A generator that yields singletons pairs from a stream of FASTA/FASTQ
@@ -58,9 +73,9 @@ def interleaved_wrapper(file_iter):
     for record in file_iter:
         if prev_record:
             if pairs.verify_paired(prev_record, record):
-                yield (prev_record, record) #it's a pair!
+                yield Paired(prev_record, record)  #records are paired
                 record = None
-            else: # orphan.
+            else:  #one of the pairs is orphaned
                 raise pairs.UnpairedReadsError("Unpaired reads found. Data "
                     "may contain orphans or is not ordered properly",
                     prev_record, record)
