@@ -236,7 +236,7 @@ def do_nothing(*args):
     pass
 
 
-def as_is(args):
+def self(args):
     return args
 
 
@@ -386,7 +386,7 @@ def main():
         else (0, 0)
     out_f = args.out_f
     paired = True if (args.interleaved or args.rhandle) else False
-    trunc_n = trim.truncate_by_n if args.trunc_n else as_is
+    trunc_n = trim.truncate_by_n if args.trunc_n else self
 
 
     # Prepare the iterator based on dataset type
@@ -509,7 +509,7 @@ def main():
     # Calculate and print program run-time
     end_time = time()
     total_time = (end_time - start_time) / 60.0
-    print("It took {:.2e} minutes to process {!s} records"\
+    print("It took {:.2e} minutes to process {!s} records\n"\
           .format(total_time, i), file=sys.stderr)
 
 
