@@ -95,7 +95,7 @@ def trim_reads(rqueue, wqueue, steps, trunc_n, crop, hcrop, minlen, p, d, s1, s2
             break
 
         try:
-            entry = (entry.forward, entry.reverse)
+            records = (entry.forward, entry.reverse)
         except AttributeError:
             records = (entry,)
 
