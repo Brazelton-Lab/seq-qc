@@ -20,7 +20,6 @@ output to be sent to standard output (stdout).
 from __future__ import division
 from __future__ import print_function
 
-from arandomness.argparse import Open
 import argparse
 from array import array
 import hashlib
@@ -58,10 +57,6 @@ def compare_seqs(query, template):
             return 3
 
     return 0
-
-
-def self(item):
-    return item
 
 
 def split_by_length(sequence, length):
@@ -111,13 +106,17 @@ def do_nothing(*args):
     pass
 
 
+def self(item):
+    return item
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__,        
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('fhandle',
         metavar='in1.fast<q|a>', 
         type=str,
-        action=Open,
+        action=seq_io.Open,
         mode='rb',
         default=sys.stdin,
         help="input reads in fastq or fasta format. Can be a file containing "
@@ -130,23 +129,23 @@ def main():
     input_arg.add_argument('-r', '--reverse',
         dest='rhandle', 
         metavar='in2.fast<q|a>', 
-        action=Open,
+        action=seq_io.Open,
         mode='rb',
         help="input reverse reads")
     parser.add_argument('-o', '--out',
         metavar='FILE',
         dest='out_f',
         type=str,
-        action=Open,
-        mode='w',
+        action=seq_io.Open,
+        mode='wt',
         default=sys.stdout,
         help="output trimmed reads [default: stdout]")
     parser.add_argument('-v', '--out-reverse', 
         metavar='FILE', 
         dest='out_r',
         type=str,
-        action=Open,
-        mode='w',
+        action=seq_io.Open,
+        mode='wt',
         help="output reverse reads")
     parser.add_argument('-f', '--format', 
         metavar='FORMAT',
@@ -156,8 +155,8 @@ def main():
         help="sequence file format. Can be fasta or fastq. [default: fastq]")
     parser.add_argument('-l', '--log', 
         type=str,
-        action=Open,
-        mode='w',
+        action=seq_io.Open,
+        mode='wt',
         help="output log file to keep track of replicates")
     dup_args = parser.add_argument_group('replicate types')
     dup_args.add_argument('--prefix',
@@ -234,7 +233,8 @@ def main():
         # sequence is unique, so check reverse-complement if set
         if args.rev_comp:
             f_rc, r_rc = pairs.reverse_complement_paired(fseq, rseq)
-            rckey = hashlib.md5(f_rc[:fsubsize] + r_rc[:rsubsize]).digest()
+            rckey = hashlib.md5((f_rc[:fsubsize] + r_rc[:rsubsize]).encode())\
+                .digest()
             dup_pos, temp_pos, dup_type = replicate_status(i, rckey,  uniques,
                 seq_db)
             if dup_pos:
