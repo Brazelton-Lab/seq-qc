@@ -5,7 +5,7 @@ trimming sequences by quality score, and filtering reads that fail to meet
 a minimum length threshold post cropping and trimming.
 
 For single-end and interleaved reads:
-    qtrim [options] [-o output] input
+    qtrim [options] [-o out.reads] in.reads
  
 For split paired-end reads:
     qtrim [option] -o out.forward -v out.reverse -s out.singles -r in.reverse
@@ -23,11 +23,9 @@ leaving out the -o argument will cause output to be sent to standard output
 from __future__ import division
 from __future__ import print_function
 
-from arandomness.argparse import CheckThreads, Open
+from arandomness.argparse import CheckThreads
 import argparse
-from bio_utils.iterators import FastqEntry
 from multiprocessing import cpu_count, Lock, Process, Queue, Value
-from seq_qc.pairs import verify_paired
 from seq_qc import seq_io, trim
 from subprocess import check_output
 import sys
@@ -58,7 +56,7 @@ class Counter(object):
             return self.val.value
 
 
-def trim_reads(rqueue, wqueue, steps, trunc_n, crop, hcrop, minlen, p, d, s1, s2, offset=33):
+def trim_reads(rqueue, wqueue, steps, trunc_n, crop, hcrop, offset=33):
     """Processes accepting input from the read queue are responsible for 
     performing trimming based on quality score. Trimmed reads will be put into 
     the write queue for subsequent threshold evaluation and writing.
@@ -84,8 +82,7 @@ def trim_reads(rqueue, wqueue, steps, trunc_n, crop, hcrop, minlen, p, d, s1, s2
 
          offset (int): quality score offset. Can be 33 (Sanger) or 64
     """
-
-    # Loop until queue contains kill message
+    # Loop until read queue contains kill message
     while True:
 
         entry = rqueue.get()
@@ -100,13 +97,13 @@ def trim_reads(rqueue, wqueue, steps, trunc_n, crop, hcrop, minlen, p, d, s1, s2
             records = (entry,)
 
         trimmed = []
-        for j, record in enumerate(records):
+        for i, record in enumerate(records):
             scores = trim.translate_quality(record.quality, offset)
 
             seqlen = len(scores)
-            lastbase = seqlen if not crop[j] or (crop[j] > seqlen) else crop[j]
+            lastbase = seqlen if not crop[i] or (crop[i] > seqlen) else crop[i]
 
-            start = hcrop[j]  #initial starting index of a sequence
+            start = hcrop[i]  #initial starting index of a sequence
             end = 0  #intial number of bases to remove from sequence end
 
             for step, value in steps:
@@ -121,49 +118,13 @@ def trim_reads(rqueue, wqueue, steps, trunc_n, crop, hcrop, minlen, p, d, s1, s2
 
             trimmed.append(trunc_n(record))
 
-        trimlen = [len(i.sequence) for i in trimmed]
-
-        first_greater = trimlen[0] >= minlen[0]
-        try:
-            second_greater = trimlen[1] >= minlen[1]
-
-        except IndexError:
-            # Record passed length threshold
-            if first_greater:
-                p.increment()
-                wqueue.put((("forward", trimmed[0]),))
-
-            else:
-                d.increment()
-
-        else:
-            # Both read pairs passed length threshold
-            if first_greater and second_greater:
-                p.increment()
-                wqueue.put((("forward", trimmed[0]), ("reverse", trimmed[1])))
-
-            # Forward reads orphaned, reverse reads failed length threshold
-            elif trimlen[0] >= minlen[0] and trimlen[1] < minlen[1]:
-                s1.increment()
-                wqueue.put((("forward", trimmed[0]),))
-
-            # Reverse reads orphaned, forward reads failed length threshold
-            elif trimlen[0] < minlen[0] and trimlen[1] >= minlen[1]:
-                s2.increment()
-                wqueue.put((("reverse", trimmed[1]),))
-
-            # Both read pairs failed length threshold and were discarded
-            else:
-                d.increment()
-
-    # Send kill message to thread responsible for writing
-    wqueue.put('DONE')
+        wqueue.put(trimmed)
 
 
-def write_reads(queue, fwrite, rwrite, swrite):
+def write_reads(queue, fout, rout, sout, minlen, p, d, s1, s2):
     """Processes accepting input from the write queue are responsible for 
     evaluating the results of the length comparison and for writing records
-to the output stream.
+    to the output stream.
 
     Args:
          queue (Queue): multiprocessing Queue class containing trimmed records
@@ -173,10 +134,15 @@ to the output stream.
          rwrite (function): function for writing records to the reverse file
 
          swrite (function): function for writing records to the singles file
+
+         minlen(int): threshold for determining whether to write a record
+         
+         p, d, s1, s2 (Counter): counter class for synchronizing incremention
+                                 between processes
     """
+    lock = Lock()
 
-    mapper = {"singles": swrite, "forward": fwrite, "reverse": rwrite}
-
+    # Loop until write queue contains kill message
     while True:
 
         trimmed = queue.get()
@@ -184,8 +150,49 @@ to the output stream.
         # Break on kill message
         if trimmed == 'DONE':
             break
-        for record in trimmed:
-            mapper[record[0]](record[1].write())
+
+        try:
+            trimlen = [len(i.sequence) for i in trimmed]
+        except AttributeError:
+            print_error("error: ")
+
+        first_greater = (trimlen[0] >= minlen[0])
+        try:
+            second_greater = (trimlen[1] >= minlen[1])
+        except IndexError:
+            # Record passed length threshold
+            if first_greater:
+                p.increment()
+                fout.write(trimmed[0].write())
+            else:
+                d.increment()
+        else:
+            # Both read pairs passed length threshold
+            if first_greater and second_greater:
+                p.increment()
+                with lock:
+                    fout.write(trimmed[0].write())
+                    rout.write(trimmed[1].write())
+
+            # Forward reads orphaned, reverse reads failed length threshold
+            elif first_greater and trimlen[1] < minlen[1]:
+                s1.increment()
+                sout.write(trimmed[0].write())
+
+            # Reverse reads orphaned, forward reads failed length threshold
+            elif trimlen[0] < minlen[0] and second_greater:
+                s2.increment()
+                sout.write(trimmed[1].write())
+
+            # Both read pairs failed length threshold and were discarded
+            else:
+                d.increment()
+
+    for handle in (fout, rout, sout):
+        try:
+            handle.close()
+        except AttributeError:
+            continue
 
 
 def parse_colons(argument):
@@ -232,10 +239,6 @@ def parse_commas(args, argname):
     return (arg1, arg2)
 
 
-def do_nothing(*args):
-    pass
-
-
 def self(args):
     return args
 
@@ -246,7 +249,7 @@ def main():
     parser.add_argument('fhandle', 
         metavar='in1.fastq',
         type=str,
-        action=Open,
+        action=seq_io.Open,
         mode='rb',
         default=sys.stdin,
         help="input reads in fastq format. Can be a file containing either "
@@ -259,30 +262,30 @@ def main():
     input_arg.add_argument('-r', '--reverse',
         dest='rhandle', 
         metavar='in2.fastq', 
-        action=Open,
+        action=seq_io.Open,
         mode='rb',
         help="input reverse reads in fastq format")
     parser.add_argument('-o', '--out', 
         metavar='FILE', 
         dest='out_f',
         type=str,
-        action=Open,
-        mode='w',
+        action=seq_io.Open,
+        mode='wt',
         default=sys.stdout,
         help="output trimmed reads [default: stdout]")
     parser.add_argument('-v', '--out-reverse', 
         metavar='FILE', 
         dest='out_r',
         type=str,
-        action=Open,
-        mode='w',
+        action=seq_io.Open,
+        mode='wt',
         help="output trimmed reverse reads")
     parser.add_argument('-s', '--singles', 
         metavar='FILE', 
         dest='out_s',
         type=str,
-        action=Open,
-        mode='w',
+        action=seq_io.Open,
+        mode='wt',
         help="output trimmed orphaned reads")
     parser.add_argument('-q', '--qual-offset', 
         metavar='TYPE', 
@@ -291,7 +294,7 @@ def main():
         choices=[33, 64],
         default=33,
         help="ASCII base quality score encoding [default: 33]. Options are "
-             "33 (for phred33) or 64 (for phred64)")
+             "33 (phred33) or 64 (phred64)")
     parser.add_argument('-m', '--min-len', 
         metavar='LEN [,LEN]', 
         dest='minlen',
@@ -306,9 +309,9 @@ def main():
         dest='trim_order',
         type=str,
         default='ltw',
-        help="order in which the trimming methods should be applied. "
-             "Available methods are l (leading), t (trailing), and w "
-             "(sliding-window) [default: ltw]")
+        help="order that the trimming methods should be applied [default: ltw]"
+             ". Available methods are l (leading), t (trailing), and w "
+             "(sliding-window)")
     trim_args.add_argument('-W', '--sliding-window', 
         metavar='FRAME',
         dest='sw',
@@ -362,7 +365,6 @@ def main():
 
     seq_io.program_info('qtrim', all_args, __version__)
 
-
     # Track program run-time
     start_time = time()
 
@@ -373,7 +375,7 @@ def main():
         args.headcrop else (0, 0)
     minlen = parse_commas(args.minlen, "minlen") if args.minlen \
         else (0, 0)
-    out_f = args.out_f.write
+    out_f = args.out_f
     paired = True if (args.interleaved or args.rhandle) else False
     trunc_n = trim.truncate_by_n if args.trunc_n else self
 
@@ -397,16 +399,17 @@ def main():
         seq_io.print_error("error: no trimming steps were specified")
 
 
-    # Counters
+    # Counters for trimming statistics
     discarded = Counter(0)
     passed = Counter(0)
 
-    # Check dataset type (paired or single-end) 
-    if paired:
-        print("\nProcessing input as paired-end reads", file=sys.stderr)
 
-        out_s = args.out_s.write if args.out_s else do_nothing
-        out_r = out_f if not args.out_r else args.out_r.write
+    # Assign variables based on dataset type (paired or single-end) 
+    if paired:
+        print("Processing input as paired-end reads", file=sys.stderr)
+
+        out_s = args.out_s if args.out_s else None
+        out_r = out_f if not args.out_r else args.out_r
 
         output = "\nRecords processed:\t{!s}\nPassed filtering:\t{!s} " \
                  "({:.2%})\n  Reads pairs kept:\t{!s} ({:.2%})\n  Forward " \
@@ -417,19 +420,24 @@ def main():
         singles2 = Counter(0)
 
     else:
-        print("\nProcessing input as single-end reads", file=sys.stderr)
-
         if args.out_s:
-            print("\nwarning: argument --singles used with single-end reads"
+            print("warning: argument --singles used with single-end reads"
                   "... ignoring\n", file=sys.stderr)
 
-        out_s = do_nothing
-        out_r = do_nothing
+        if args.out_r:
+            print("warning: argument --out-reverse used when input is "
+                  "single-end... ignoring\n", file=sys.stderr)
+
+        print("Processing input as single-end reads", file=sys.stderr)
+
+        out_s = None
+        out_r = None
 
         output = "\nRecords processed:\t{!s}\nPassed filtering:\t{!s} ({:.2%})" \
                  "\nRecords discarded:\t{!s} ({:.2%})\n"
 
         singles1 = singles2 = None
+
 
     max_read_threads = args.threads - 1 if args.threads > 1 else 1
     read_queue = Queue(max_read_threads)  # Max queue prevents race conditions
@@ -439,20 +447,22 @@ def main():
     # Initialize threads to process reads and writes
     read_processes = []
     for i in range(max_read_threads):
-        read_processes.append(Process(target=trim_reads, args=(read_queue, write_queue, trim_steps, trunc_n, crop, hcrop, minlen, passed, discarded, singles1, singles2, args.offset,)))
+        read_processes.append(Process(target=trim_reads, args=(read_queue, \
+            write_queue, trim_steps, trunc_n, crop, hcrop, args.offset,)))
         read_processes[i].start()
 
-    write_process = Process(target=write_reads, args=(write_queue, out_f, out_r, out_s,))
+    write_process = Process(target=write_reads, args=(write_queue, out_f, \
+        out_r, out_s, minlen, passed, discarded, singles1, singles2,))
     write_process.start()
 
 
     # Iterate over reads, populating read queue for trimming
-    for i, records in enumerate(iterator):
+    for processed_total, records in enumerate(iterator):
         read_queue.put(records)
 
 
-    # Send a kill message to each thread designated for reading via read_queue
-    for j in read_processes:
+    # Send kill message to threads responsible for trimming
+    for process in read_processes:
         read_queue.put('DONE')
 
 
@@ -460,12 +470,20 @@ def main():
     for process in read_processes:
         process.join()
 
+
+    # Send kill message to threads responsible for trimming
+    while not write_queue.empty():
+        sleep(1)
+    write_queue.put('DONE')
+
+
+    # Wait for write processes to finish before continuing
     write_process.join()
 
 
-    # Make sure input file non-empty
+    # Verify input file non-empty
     try:
-        i += 1
+        processed_total += 1
     except UnboundLocalError:
         seq_io.print_error("error: no sequences were found to process")
 
@@ -475,22 +493,24 @@ def main():
     d = discarded.value()
 
     if paired:
-        i = i * 2
+        processed_total = processed_total * 2
         s1, s2 = singles1.value(), singles2.value()
+        passed_total = (p * 2 + s1 + s2)
+        discarded_total = d * 2 + s1 + s2
         pairs = p
-        total = (p * 2 + s1 + s2)
-        frac_pairs = (pairs * 2) / i
-        frac_s1 = s1 / i
-        frac_s2 = s2 /i
-        d = (i - d * 2) - (s1 + s2)
+        frac_pairs = (pairs * 2) / processed_total
+        frac_s1 = s1 / processed_total
+        frac_s2 = s2 / processed_total
     else:
+        passed_total = p
+        discarded_total = d
+        processed_total = discarded_total + passed_total
         s1 = s2 = frac_s1 = frac_s2 = pairs = frac_pairs = None
-        total = p
 
-    frac_d = d / i
-    frac_total = total / i
-    stats = [i, total, frac_total] + [i for i in (pairs, frac_pairs, s1, \
-             frac_s1, s2, frac_s2) if i != None] + [d, frac_d]
+    frac_discarded = discarded_total / processed_total
+    frac_passed = passed_total / processed_total
+    stats = [processed_total, passed_total, frac_passed] + [i for i in (pairs, frac_pairs, s1, \
+             frac_s1, s2, frac_s2) if i != None] + [discarded_total, frac_discarded]
     print(output.format(*tuple(stats)), file=sys.stderr)
 
 
@@ -498,7 +518,7 @@ def main():
     end_time = time()
     total_time = (end_time - start_time) / 60.0
     print("It took {:.2e} minutes to process {!s} records\n"\
-          .format(total_time, i), file=sys.stderr)
+          .format(total_time, processed_total), file=sys.stderr)
 
 
 if __name__ == "__main__":
