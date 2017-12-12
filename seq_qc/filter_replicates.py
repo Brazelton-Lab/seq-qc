@@ -141,18 +141,13 @@ def main():
         mode='w',
         default=sys.stdout,
         help="output trimmed reads [default: stdout]")
-    output_arg = parser.add_mutually_exclusive_group(required=False)
-    output_arg.add_argument('-v', '--out-reverse', 
+    parser.add_argument('-v', '--out-reverse', 
         metavar='FILE', 
         dest='out_r',
         type=str,
         action=Open,
         mode='w',
         help="output reverse reads")
-    output_arg.add_argument('--out-interleaved',
-        dest='out_interleaved',
-        action='store_true',
-        help="output interleaved paired-end reads, even if input is split")
     parser.add_argument('-f', '--format', 
         metavar='FORMAT',
         dest='format',
@@ -185,12 +180,6 @@ def main():
 
     seq_io.program_info('filter_replicates', all_args, __version__)
 
-    # Fail if insufficient directive supplied
-    if args.rhandle and not (args.out_r or args.out_interleaved):
-        parser.error("one of -v/--out-reverse or --out-interleaved is required "
-            "when the argument -r/--reverse is used")
-
-
     # Track program run-time
     start_time = time()
 
@@ -200,8 +189,7 @@ def main():
     logger = args.log.write if args.log else do_nothing
     compress = zlib.compress if args.mem_use else self
     decompress = zlib.decompress if args.mem_use else self
-    out_r = out_f if ((args.interleaved or args.out_interleaved) and not \
-        args.out_r) else args.out_r.write
+    out_r = out_f if not args.out_r else args.out_r.write
     out_format = ">{0} {1}\n{2}\n" if args.format == "fasta" else \
                  "@{0} {1}\n{2}\n+\n{3}\n"
 
