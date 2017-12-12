@@ -24,8 +24,7 @@ from arandomness.argparse import Open
 import argparse
 from array import array
 import hashlib
-import pairs
-import seq_io
+from seq_qc import pairs, seq_io
 from screed.dna import reverse_complement
 import sys
 from time import time
@@ -108,6 +107,10 @@ def replicate_status(query_position, key, unique_db, search_db):
     return (None, None, None)
 
 
+def do_nothing(*args):
+    pass
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__,        
         formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -117,10 +120,9 @@ def main():
         action=Open,
         mode='rb',
         default=sys.stdin,
-        help="input reads in fastq format. Can be a file containing either "
-             "single-end or forward/interleaved reads if reads are paired-end "
-             "[required]")
-        help="input forward or interleaved reads [required]")
+        help="input reads in fastq or fasta format. Can be a file containing "
+             "either single-end or forward/interleaved reads if reads are "
+             "paired-end [required]")
     input_arg = parser.add_mutually_exclusive_group(required=True)
     input_arg.add_argument('--interleaved',
         action='store_true',
@@ -184,7 +186,7 @@ def main():
     seq_io.program_info('filter_replicates', all_args, __version__)
 
     # Fail if insufficient directive supplied
-    if args.r_file and not (args.out_r or args.out_interleaved):
+    if args.rhandle and not (args.out_r or args.out_interleaved):
         parser.error("one of -v/--out-reverse or --out-interleaved is required "
             "when the argument -r/--reverse is used")
 
@@ -200,6 +202,8 @@ def main():
     decompress = zlib.decompress if args.mem_use else self
     out_r = out_f if ((args.interleaved or args.out_interleaved) and not \
         args.out_r) else args.out_r.write
+    out_format = ">{0} {1}\n{2}\n" if args.format == "fasta" else \
+                 "@{0} {1}\n{2}\n+\n{3}\n"
 
     # Prepare the iterator based on dataset type
     iterator = seq_io.read_iterator(args.fhandle, args.rhandle, \
@@ -212,19 +216,18 @@ def main():
     # Iterate over records, storing unique records in uniques
     seq_db = {}
     uniques = {}
-    for i, records in enumerate(iterator):
-        forward, reverse = records
-        ident = forward['identifier']
-        fdesc, rdesc = (forward['description'], reverse['description'])
-        fseq, rseq = (forward['sequence'], reverse['sequence'])
-        fqual, rqual = (forward['quality'], reverse['quality'])
+    for i, record in enumerate(iterator):
+        ident = (record.forward.id, record.reverse.id)
+        fdesc, rdesc = record.forward.description, record.reverse.description
+        fseq, rseq = (record.forward.sequence, record.reverse.sequence)
+        fqual, rqual = (record.forward.quality, record.reverse.quality)
 
         flen, rlen = len(fseq), len(rseq)
 
         uniques[i] = (fseq + rseq, flen, compress(fqual + rqual), ident)
 
         fsubsize, rsubsize = ((20, 20) if args.prefix else (flen, rlen))
-        key = hashlib.md5(fseq[:fsubsize] + rseq[:rsubsize]).digest()
+        key = hashlib.md5((fseq[:fsubsize] + rseq[:rsubsize]).encode()).digest()
 
         dup_pos, temp_pos, dup_type = replicate_status(i, key, uniques, seq_db)
 
@@ -275,15 +278,14 @@ def main():
     # Write unique records
     for j, index in enumerate(sorted(uniques.keys())):
         record = uniques[index]
-        ident = record[3]
+        fident, rident = record[3]
 
         fseq, rseq = split_by_length(record[0], record[1])
         fqual, rqual = split_by_length(decompress(record[2]), record[1])
 
-        out_f({'identifier': ident, 'description': fdesc, 
-            'sequence': fseq, 'quality': fqual})
-        out_r({'identifier': ident, 'description': rdesc, 
-            'sequence': rseq, 'quality': rqual})
+
+        out_f(out_format.format(fident, fdesc, fseq, fqual))
+        out_r(out_format.format(rident, rdesc, rseq, rqual))
 
     j += 1  #number remaining records after dereplication
 
@@ -297,7 +299,7 @@ def main():
     # Calculate and print program run-time
     end_time = time()
     total_time = (end_time - start_time) / 60.0
-    print("It took {:.2e} minutes to process {!s} records"\
+    print("It took {:.2e} minutes to process {!s} records\n"\
           .format(total_time, i), file=sys.stderr)
 
 
