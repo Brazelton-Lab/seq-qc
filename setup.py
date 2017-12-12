@@ -3,7 +3,7 @@ from setuptools import setup, Extension
 bernoulli = Extension('bernoulli', sources=['seq_qc/bernoullimodule.c'])
 
 setup(name='seq-qc',
-      version='1.5.1',
+      version='1.6.0',
       packages=['seq_qc',],
       description='utilities for performing various preprocessing steps on '
           'sequencing reads',
@@ -13,8 +13,7 @@ setup(name='seq-qc',
           'License :: OSI Approved :: GNU General Public License v2 (GPLv2)',
           'Natural Language :: English',
           'Operating System :: OS Independent',
-          'Programming Language :: Python :: 2.7',
-          'Programming Language :: Python :: 3.4',
+          'Programming Language :: Python :: 3.6',
           'Topic :: Scientific/Engineering :: Bio-Informatics',
           'Topic :: Software Development :: Libraries :: Python Modules'
       ],
