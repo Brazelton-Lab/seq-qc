@@ -5,6 +5,7 @@ from bio_utils.iterators import fasta_iter, fastq_iter
 import bz2
 import gzip
 import io
+from seq_qc import pairs
 import sys
 import textwrap
 
@@ -47,13 +48,13 @@ def read_iterator(forward, reverse=None, interleaved=False, f_format='fastq'):
         return handle_interleaved(f_iter)
     elif reverse:
         r_iter = parser(reverse)
-        return Paired(f_iter, r_iter)
+        return handle_split(izip(f_iter, r_iter))
     else:
         return (f_iter)
 
 
 def handle_interleaved(file_iter):
-    """Read pairs from a stream (inspired by khmer).
+    """Read interleaved pairs from a stream (inspired by khmer).
 
     A generator that yields singletons pairs from a stream of FASTA/FASTQ
     records.  Yields (r1, r2) where 'r2' is None if is_pair is
@@ -64,7 +65,6 @@ def handle_interleaved(file_iter):
        for read1, read2 in interleaved_wrapper(...):
           ...
     """
-    from seq_qc import pairs
 
     record = None
     prev_record = None
@@ -82,6 +82,18 @@ def handle_interleaved(file_iter):
 
         prev_record = record
         record = None
+
+
+def handle_split(file_iter):
+    """Read split pairs from a stream
+    """
+    for record1, record2 in file_iter:
+        if pairs.verify_paired(record1, record2):
+            yield Paired(record1, record2)  #records are paired
+        else:
+            raise pairs.UnpairedReadsError("Unpaired reads found. Verify that "
+                "the order of the forward and reverse reads is the same", 
+                record1, record2)
 
 
 def print_error(message):

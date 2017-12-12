@@ -185,7 +185,7 @@ to the output stream.
         if trimmed == 'DONE':
             break
         for record in trimmed:
-            print(record[1].write(), end='', file=mapper[record[0]])
+            mapper[record[0]](record[1].write())
 
 
 def parse_colons(argument):
@@ -270,18 +270,13 @@ def main():
         mode='w',
         default=sys.stdout,
         help="output trimmed reads [default: stdout]")
-    output_arg = parser.add_mutually_exclusive_group(required=False)
-    output_arg.add_argument('-v', '--out-reverse', 
+    parser.add_argument('-v', '--out-reverse', 
         metavar='FILE', 
         dest='out_r',
         type=str,
         action=Open,
         mode='w',
         help="output trimmed reverse reads")
-    output_arg.add_argument('--out-interleaved', 
-        dest='out_interleaved',
-        action='store_true',
-        help="output interleaved paired-end reads, even if input is split")
     parser.add_argument('-s', '--singles', 
         metavar='FILE', 
         dest='out_s',
@@ -368,12 +363,6 @@ def main():
     seq_io.program_info('qtrim', all_args, __version__)
 
 
-    # Fail if insufficient directive supplied
-    if args.rhandle and not (args.out_r or args.out_interleaved):
-        parser.error("one of -v/--out-reverse or --out-interleaved is required "
-            "when the argument -r/--reverse is used")
-
-
     # Track program run-time
     start_time = time()
 
@@ -384,7 +373,7 @@ def main():
         args.headcrop else (0, 0)
     minlen = parse_commas(args.minlen, "minlen") if args.minlen \
         else (0, 0)
-    out_f = args.out_f
+    out_f = args.out_f.write
     paired = True if (args.interleaved or args.rhandle) else False
     trunc_n = trim.truncate_by_n if args.trunc_n else self
 
@@ -416,9 +405,8 @@ def main():
     if paired:
         print("\nProcessing input as paired-end reads", file=sys.stderr)
 
-        out_s = args.out_s if args.out_s else do_nothing
-        out_r = out_f if ((args.interleaved or args.out_interleaved) and not \
-            args.out_r) else args.out_r
+        out_s = args.out_s.write if args.out_s else do_nothing
+        out_r = out_f if not args.out_r else args.out_r.write
 
         output = "\nRecords processed:\t{!s}\nPassed filtering:\t{!s} " \
                  "({:.2%})\n  Reads pairs kept:\t{!s} ({:.2%})\n  Forward " \
