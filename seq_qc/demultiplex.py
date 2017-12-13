@@ -90,6 +90,12 @@ def main():
         action='store_true',
         help="output files should be compressed using the bzip2 algorithm. The "
              "suffix '.bz2' will be appended to the file names.")
+    parser.add_argument('-d', '--distance',
+        type=int,
+        default=0,
+        help="hamming distance allowed between sequence barcodes in order to "
+             "be placed into the same partition. Requires a barcodes file "
+             "providing template barcode sequences.")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
@@ -101,6 +107,9 @@ def main():
     # Track program run-time
     start_time = time()
 
+    if args.distance and not args.barcodes:
+        parser.error("error: argument -b/--barcodes must be used with "
+                     "-d/--distance")
 
     # Assign variables based on arguments supplied by the user
     suffix = args.suffix if args.suffix else args.format
@@ -172,7 +181,7 @@ def main():
             else:
                 print("warning: barcode {0} from sequence {1} doesn't correspond "
                       "to any of the barcodes provided. Use --force to write "
-                      "sequences anyway".format(tag, ident), file=sys.stderr)
+                      "the record anyway".format(tag, ident), file=sys.stderr)
                 continue
 
         # Write record to appropriate output file
