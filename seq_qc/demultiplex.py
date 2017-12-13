@@ -37,6 +37,23 @@ def do_nothing(*args):
     pass
 
 
+def hamming_distance(s1, s2):
+    #Return the Hamming distance between equal-length sequences
+    if len(s1) != len(s2):
+        raise ValueError("Undefined for sequences of unequal length")
+    return sum(ch1 != ch2 for ch1, ch2 in zip(s1, s2))
+
+
+def return_last(last):
+    return last[-1]
+
+
+def sort_by_last(tuple_list):
+    """Sort list of tuples by the value of the last item in tuple.
+    """
+    return sorted(tuple_list, reverse=False, key=return_last)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -153,7 +170,7 @@ def main():
     outfiles = {}
     unknowns = 0
     for processed_total, record in enumerate(iterator):
-        # Prep output dependant on whether paired or unpaired
+        # Prepare output dependant on whether paired or unpaired
         try:
             tag = record.forward.description.split(':')[-1]
             ident = record.forward.id
@@ -171,6 +188,26 @@ def main():
                                "these reads will require a different method "
                                "to be used instead")
 
+
+        # Find the template barcode with the smallest hamming distance to the 
+        # record sequence barcode
+        if args.distance:
+            distances = sort_by_last([(i, hamming_distance(tag, i)) for i in \
+                                     tags.keys()])
+            min_tag, min_dist = distances[0]
+
+            # Determine if more than one closest match
+            if [i[1] for i in distances].count(min_dist) > 1:
+                print("warning: barcode {0} in sequence {1} is equally as "
+                      "similar to more than one template barcodes. Unable to "
+                      "determine which partition to assign it to".format(tag, \
+                      ident), file=sys.stderr)
+                continue
+            else:
+                if min_dist <= args.distance:
+                    tag = min_tag
+                
+
         # Verify sequence tag in list of provided barcodes
         try:
             name = tags[tag]
@@ -183,6 +220,7 @@ def main():
                       "to any of the barcodes provided. Use --force to write "
                       "the record anyway".format(tag, ident), file=sys.stderr)
                 continue
+
 
         # Write record to appropriate output file
         try:
