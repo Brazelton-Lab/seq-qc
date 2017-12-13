@@ -233,7 +233,13 @@ def handle_split(file_iter):
 
 def print_error(message):
     print(textwrap.fill(message, 79), file=sys.stderr)
+    print("", file=sys.stderr)
     sys.exit(1)
+
+
+def print_warning(message):
+    print(textwrap.fill(message, 79), file=sys.stderr)
+    print("", file=sys.stderr)
 
 
 def program_info(prog, args, version):

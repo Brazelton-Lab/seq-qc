@@ -197,7 +197,7 @@ def main():
                                     args.interleaved, args.format)
 
 
-    logger(args.log, "Replicate\tTemplate\tType\n")
+    logger("Replicate\tTemplate\tType\n")
 
 
     # Iterate over records, storing unique records in uniques
@@ -220,8 +220,8 @@ def main():
 
         # match to database found, so delete id from database of uniques
         if dup_pos:
-            seq_io.logger(args.log, "{}\t{}\t{}\n".format(uniques[dup_pos][3], 
-                uniques[temp_pos][3], dup_type))
+            logger("{}\t{}\t{}\n".format(uniques[dup_pos][3], \
+                   uniques[temp_pos][3], dup_type))
             try:
                 del uniques[dup_pos]
             except KeyError:
@@ -239,8 +239,8 @@ def main():
                 seq_db)
             if dup_pos:
                 dup_type = 'rev-comp ' + dup_type
-                seq_io.logger(args.log, "{}\t{}\t{}\n".format(
-                    uniques[dup_pos][3], uniques[temp_pos][3], dup_type))
+                logger("{}\t{}\t{}\n".format(uniques[dup_pos][3], \
+                       uniques[temp_pos][3], dup_type))
                 try:
                     del uniques[dup_pos]
                 except KeyError:

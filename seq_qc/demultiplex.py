@@ -2,7 +2,7 @@
 """
 Split sequences into separate files based on the barcode sequence found in
 the sequence header. The sequence headers should be of the form 
-'@seqid <strand>:N:0:<barcode>'.
+'@seqid <strand>:N:0:<barcode>' (Casava 1.8).
 
 For single-end and interleaved reads:
     demultiplex_headers [options] input
@@ -19,8 +19,8 @@ input (stdin).
 from __future__ import print_function
 
 import argparse
-import bz2
-import gzip
+from bz2 import BZ2File
+from gzip import GzipFile
 import io
 from seq_qc import seq_io
 import sys
@@ -33,24 +33,45 @@ __status__ = "Production"
 __version__ = "0.2.0"
 
 
+class BarcodeEntry(object):
+    """A simple class to store template barcodes
+
+    Attributes:
+            id (str): Barcode identifier
+
+            sequence (str): Barcode sequence
+
+            count (int): Number of times template barcode has been observed
+    """
+    def __init__(self, initval=0):
+        """Initialize attributes to store Barcode entry data"""
+        self.id = None
+        self.sequence = None
+        self.count = initval
+
+    def increment(self):
+        self.count += 1
+
+
 def do_nothing(*args):
     pass
 
 
 def hamming_distance(s1, s2):
-    #Return the Hamming distance between equal-length sequences
+    #Return Hamming distance between equal-length sequences
     if len(s1) != len(s2):
-        raise ValueError("Undefined for sequences of unequal length")
+        raise ValueError("Template and sequence index barcodes must be equal "
+                         "in length")
     return sum(ch1 != ch2 for ch1, ch2 in zip(s1, s2))
 
 
 def return_last(last):
+    """Return last item in a list or tuple"""
     return last[-1]
 
 
 def sort_by_last(tuple_list):
-    """Sort list of tuples by the value of the last item in tuple.
-    """
+    """Sort list of tuples or lists by the value of their last item"""
     return sorted(tuple_list, reverse=False, key=return_last)
 
 
@@ -121,15 +142,33 @@ def main():
 
     seq_io.program_info('demultiplex_headers', all_args, __version__)
 
-    # Track program run-time
-    start_time = time()
-
     if args.distance and not args.barcodes:
         parser.error("error: argument -b/--barcodes must be used with "
                      "-d/--distance")
 
+    # Track program run-time
+    start_time = time()
+
+
     # Assign variables based on arguments supplied by the user
+    if args.barcodes and args.distance > 0:
+        outstats = "Records processed:\t{0}\nBarcode partitions created:\t{1}"\
+                   "\nSequence barcodes with -\n  exact match to a template:"\
+                   "\t{2}\n  one or more mismatchs:\t{3}\nSequences with "\
+                   "unknown barcode:\t{4}\n"
+        exact_total = mismatch_total = unknowns = 0
+    elif args.barcodes and args.distance == 0:
+        outstats = "Records processed:\t{0}\nBarcode partitions created:\t{1}"\
+                   "\nSequences with unknown barcode:\t{2}\n"
+        exact_total = mismatch_total = None
+        unknowns = 0
+    else:
+        outstats = "Records processed:\t{0}\nBarcode partitions created:\t{1}"\
+                   "\n"
+        exact_total = mismatch_total = unknowns = None
+
     suffix = args.suffix if args.suffix else args.format
+
     if args.gzip:
         compression = '.gz'
         algo = GzipFile
@@ -149,26 +188,29 @@ def main():
     # Store list of user-supplied barcodes
     tags = {}
     if args.barcodes:
-        names = []
         for line in args.barcodes:
+            tag = BarcodeEntry()
+
+            # Verify barcodes file correctly formatted
             try:
-                name, tag = line.strip().split('\t')
+                name, sequence = line.strip().split('\t')
             except ValueError:
                 seq_io.print_error("error: barcode mapping file does not "
-                    "appear to be formatted correctly")
+                                   "appear to be formatted correctly")
 
-            if name in names:
+            # Verify unique sample names
+            if name in [i.id for i in tags.values()]:
                 seq_io.print_error("error: the same sample name is used for "
-                    "more than one barcode sequence")
-            else:
-                names.append(name)
+                                   "more than one barcode sequence")
 
-            tags[tag] = name
+            tag.id = name
+            tag.sequence = sequence
+
+            tags[sequence] = tag
 
 
     # Demultiplex reads
     outfiles = {}
-    unknowns = 0
     for processed_total, record in enumerate(iterator):
         # Prepare output dependant on whether paired or unpaired
         try:
@@ -192,64 +234,77 @@ def main():
         # Find the template barcode with the smallest hamming distance to the 
         # record sequence barcode
         if args.distance:
-            distances = sort_by_last([(i, hamming_distance(tag, i)) for i in \
-                                     tags.keys()])
+            distances = sort_by_last([(i.sequence, hamming_distance(tag, \
+                                     i.sequence)) for i in tags.values()])
+
             min_tag, min_dist = distances[0]
+
+            if min_dist == 0:
+                exact_total += 1
+            else:
+                mismatch_total += 1
 
             # Determine if more than one closest match
             if [i[1] for i in distances].count(min_dist) > 1:
-                print("warning: barcode {0} in sequence {1} is equally as "
-                      "similar to more than one template barcodes. Unable to "
-                      "determine which partition to assign it to".format(tag, \
-                      ident), file=sys.stderr)
+                seq_io.print_warning("warning: barcode {0} in sequence {1} is "
+                                     "equally similar to more than one "
+                                     "template barcode. Unable to determine "
+                                     "which partition to assign it to"\
+                                     .format(tag, ident))
                 continue
             else:
                 if min_dist <= args.distance:
                     tag = min_tag
-                
+ 
 
         # Verify sequence tag in list of provided barcodes
-        try:
-            name = tags[tag]
-        except KeyError:
-            unknowns += 1
-            if args.force:
-                name = str(tag)
-            else:
-                print("warning: barcode {0} from sequence {1} doesn't correspond "
-                      "to any of the barcodes provided. Use --force to write "
-                      "the record anyway".format(tag, ident), file=sys.stderr)
-                continue
+        if args.barcodes:
+            try:
+                file_prefix = tags[tag].id
+            except KeyError:
+                unknowns += 1
+                if args.force:
+                    file_prefix = str(tag)
+                else:
+                    seq_io.print_warning("warning: sequence barcode {0} does "
+                                         "not correspond to any of the "
+                                         "template barcodes provided. Use "
+                                         "--force to write these records "
+                                         "anyway".format(tag))
+                    continue
+
+        else:
+            file_prefix = str(tag)
 
 
         # Write record to appropriate output file
         try:
-            outfiles[name][0](outf)
-            outfiles[name][1](outr)
+            outfiles[file_prefix][0](outf)
+            outfiles[file_prefix][1](outr)
 
         except KeyError:
             # Barcode not encountered previously, open new file for writes
             if args.rhandle:
                 handle1 = io.TextIOWrapper(algo("{0}.forward.{1}{2}"\
-                    .format(name, suffix, compression), mode='wb'))
+                    .format(file_prefix, suffix, compression), mode='wb'))
                 handle2 = io.TextIOWrapper(algo("{0}.reverse.{1}{2}"\
-                    .format(name, suffix, compression), mode='wb'))
+                    .format(file_prefix, suffix, compression), mode='wb'))
                 write1, write2 = handle1.write, handle2.write
             elif args.interleaved:
                 handle1 = io.TextIOWrapper(algo("{0}.interleaved.{1}{2}"\
-                    .format(name, suffix, compression), mode='wb'))
+                    .format(file_prefix, suffix, compression), mode='wb'))
                 write1 = write2 = handle1.write
             else:
-                handle1 = io.TextIOWrapper(algo("{0}.{1}{2}".format(name, \
+                handle1 = io.TextIOWrapper(algo("{0}.{1}{2}".format(file_prefix, \
                     suffix, compression), mode='wb'))
                 write1 = handle1.write
                 write2 = do_nothing
 
-            outfiles[name] = (write1, write2)
+            outfiles[file_prefix] = (write1, write2)
 
             # Should be safe to write now
-            outfiles[name][0](outf)
-            outfiles[name][1](outr)
+            outfiles[file_prefix][0](outf)
+            outfiles[file_prefix][1](outr)
 
 
     # Verify input file non-empty
@@ -260,10 +315,10 @@ def main():
 
 
     # Calculate and print output statistics
-    num_parts = len(outfiles)
-    print("\nRecords processed:\t{!s}\nBarcode partitions created:\t{!s}\n"
-          "Sequences with unknown Barcode:\t{!s}\n".format(processed_total, \
-          num_parts, unknowns), file=sys.stderr)
+    partitions_total = len(outfiles)
+    stats = [processed_total, partitions_total] + [i for i in \
+             (exact_total, mismatch_total, unknowns) if i != None]
+    print(outstats.format(*tuple(stats)), file=sys.stderr)
 
 
     # Calculate and print program run-time
