@@ -15,8 +15,8 @@ def verify_paired(record1, record2):
     Handles both Casava formats: seq/1 and seq/2, and 'seq::... 1::...'
     and 'seq::... 2::...'.
     """
-    l_name, l_desc = (record1['identifier'], record1['description'])
-    r_name, r_desc = (record2['identifier'], record2['description'])
+    l_name, l_desc = (record1.id, record1.description)
+    r_name, r_desc = (record2.id, record2.description)
 
     # handle 'name/1'
     if l_name.endswith('/1') and r_name.endswith('/2'):

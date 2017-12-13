@@ -5,203 +5,387 @@ trimming sequences by quality score, and filtering reads that fail to meet
 a minimum length threshold post cropping and trimming.
 
 For single-end and interleaved reads:
-    qtrim [options] [-o output] input
+    qtrim [options] [-o out.reads] in.reads
  
 For split paired-end reads:
-    qtrim [option] -o out.forward -v out.reverse -s out.singles in.forward 
-        in.reverse
+    qtrim [option] -o out.forward -v out.reverse -s out.singles -r in.reverse
+        in.forward
 
 Input files must be in FASTQ format. Output can be in either FASTQ or FASTA 
 format. Compression using gzip and bzip2 algorithms is automatically detected 
 for input files. To compress output, add the appropriate file extension to the 
-file names (.gz, .bz2). For single-end or interleaved reads, use '-' to 
+file names (.gz, .bz2). For single-end or interleaved reads, use /dev/stdin to 
 indicate that input should be taken from standard input (stdin). Similarly, 
 leaving out the -o argument will cause output to be sent to standard output 
 (stdout).
 """
 
-from __future__ import print_function
 from __future__ import division
+from __future__ import print_function
+
+from arandomness.argparse import CheckThreads
+import argparse
+from multiprocessing import cpu_count, Lock, Process, Queue, Value
+from seq_qc import seq_io, trim
+from subprocess import check_output
+import sys
+from time import sleep, time
 
 __author__ = "Christopher Thornton"
-__date__ = "2016-11-06"
-__version__ = "1.5.1"
+__license__ = 'GPLv2'
+__maintainer__ = 'Christopher Thornton'
+__status__ = "Production"
+__version__ = "2.0.0"
 
-import argparse
-import seq_io
-import sys
-import trim
 
-def apply_trimming(record, steps, qual_type, start=0, end=0, trunc=False):
-    qual = record['quality']
-    seq = record['sequence']
-    slen = len(seq)
+class Counter(object):
+    """A synchronized shared counter to use with the multiprocessing module.
 
-    scores = trim.translate_quality(qual, qual_type)
-    for step, value in steps:
-        newstart, newend = step(scores[start: slen - end], value)
-        start += newstart
-        end += newend
+    Credit: Eli Benderksy
+    """
+    def __init__(self, initval=0):
+        self.val = Value('i', initval)
+        self.lock = Lock()
 
-    last = slen - end
-    if trunc:
+    def increment(self):
+        with self.lock:
+            self.val.value += 1
+
+    def value(self):
+        with self.lock:
+            return self.val.value
+
+
+def trim_reads(rqueue, wqueue, steps, trunc_n, crop, hcrop, offset=33):
+    """Processes accepting input from the read queue are responsible for 
+    performing trimming based on quality score. Trimmed reads will be put into 
+    the write queue for subsequent threshold evaluation and writing.
+
+    Args:
+         rqueue (Queue): multiprocessing Queue class containing records to 
+                         process
+
+         wqueue (Queue): multiprocessing Queue class to input trimmed records 
+                         designated for writing
+
+         steps (dict): dictionary of trimming steps to apply, with trimming 
+                       functions as keys and user-supplied arguments as the 
+                       values
+
+         trunc_n (function): function for trimming reads to position of first 
+                             ambiguous base, or returning data unchanged
+
+         crop (array): array storing indices to crop sequences to
+
+         hcrop (array): array storing indices where sequences should start 
+                        from
+
+         offset (int): quality score offset. Can be 33 (Sanger) or 64
+    """
+    # Loop until read queue contains kill message
+    while True:
+
+        entry = rqueue.get()
+
+        # Break on kill message
+        if entry == 'DONE':
+            break
+
         try:
-            nstart = seq[start: last].index('N')
-        except ValueError:
-            nstart = last
-        seq, qual = seq[start: nstart], qual[start: nstart]
-    else:
-        seq, qual = seq[start: last], qual[start: last]
+            records = (entry.forward, entry.reverse)
+        except AttributeError:
+            records = (entry,)
 
-    record['sequence'], record['quality'] = seq, qual
-    return record
+        trimmed = []
+        for i, record in enumerate(records):
+            scores = trim.translate_quality(record.quality, offset)
 
-def parse_sw_arg(argument):
+            seqlen = len(scores)
+            lastbase = seqlen if not crop[i] or (crop[i] > seqlen) else crop[i]
+
+            start = hcrop[i]  #initial starting index of a sequence
+            end = 0  #intial number of bases to remove from sequence end
+
+            for step, value in steps:
+                newstart, newend = step(scores[start: lastbase - end], value)
+                start += newstart
+                end += newend
+
+            last = seqlen - end
+
+            record.sequence, record.quality = record.sequence[start: last], \
+                record.quality[start: last]
+
+            trimmed.append(trunc_n(record))
+
+        wqueue.put(trimmed)
+
+
+def write_reads(queue, fout, rout, sout, minlen, p, d, s1, s2):
+    """Processes accepting input from the write queue are responsible for 
+    evaluating the results of the length comparison and for writing records
+    to the output stream.
+
+    Args:
+         queue (Queue): multiprocessing Queue class containing trimmed records
+
+         fwrite (function): function for writing records to the forward file
+         
+         rwrite (function): function for writing records to the reverse file
+
+         swrite (function): function for writing records to the singles file
+
+         minlen(int): threshold for determining whether to write a record
+         
+         p, d, s1, s2 (Counter): counter class for synchronizing incremention
+                                 between processes
+    """
+    lock = Lock()
+
+    # Loop until write queue contains kill message
+    while True:
+
+        trimmed = queue.get()
+
+        # Break on kill message
+        if trimmed == 'DONE':
+            break
+
+        try:
+            trimlen = [len(i.sequence) for i in trimmed]
+        except AttributeError:
+            print_error("error: ")
+
+        first_greater = (trimlen[0] >= minlen[0])
+        try:
+            second_greater = (trimlen[1] >= minlen[1])
+        except IndexError:
+            # Record passed length threshold
+            if first_greater:
+                p.increment()
+                fout.write(trimmed[0].write())
+            else:
+                d.increment()
+        else:
+            # Both read pairs passed length threshold
+            if first_greater and second_greater:
+                p.increment()
+                with lock:
+                    fout.write(trimmed[0].write())
+                    rout.write(trimmed[1].write())
+
+            # Forward reads orphaned, reverse reads failed length threshold
+            elif first_greater and trimlen[1] < minlen[1]:
+                s1.increment()
+                sout.write(trimmed[0].write())
+
+            # Reverse reads orphaned, forward reads failed length threshold
+            elif trimlen[0] < minlen[0] and second_greater:
+                s2.increment()
+                sout.write(trimmed[1].write())
+
+            # Both read pairs failed length threshold and were discarded
+            else:
+                d.increment()
+
+    for handle in (fout, rout, sout):
+        try:
+            handle.close()
+        except AttributeError:
+            continue
+
+
+def parse_colons(argument):
     try:
         window, score = argument.split(':')
     except ValueError:
-        seq_io.print_error("error: the input for -w/--window-size is "
-            "formatted incorrectly. See --help for instructions")
+        seq_io.print_error("error: the input provided to sliding-window is "
+                           "formatted incorrectly. See --help for usage")
     else:
         if score.isdigit():
             score = int(score)
         else:
-            seq_io.print_error("error: score threshold should be an integer "
-                "value")
+            seq_io.print_error("error: the quality score threshold provided "
+                               "to sliding-window must be an integer value")
         if window.isdigit():
             window = int(window)
         else:
             try:
                 window = float(window)
             except ValueError:
-                seq_io.print_error("error: window size should be either an "
-                    "integer or a fraction")
+                seq_io.print_error("error: the window-size provided to "
+                                   "sliding-window must be either an integer "
+                                   "value or a fraction")
 
     return (window, score)
 
-def get_list(argument):
+
+def parse_commas(args, argname):
+    args = [i.lstrip() for i in args.split(",")]
+
+    if 1> len(args) > 2:
+        seq_io.print_error("error: only one or two integer values should be "
+            "provided to {0}".format(argname))
+
     try:
-        argument = [abs(int(i.lstrip())) for i in argument.split(",")]
+        arg1 = int(args[0])
+        arg2 = int(args[1])
     except ValueError:
-        seq_io.print_error("error: input to -c/--crop, -d/--headcrop, and "
-            "-m/--min-len must be in the form INT or INT,INT")
-    arglen = len(argument)
-    if arglen < 1 or arglen > 2:
-        seq_io.print_error("error: one or two integer values should be "
-            "provided with -c/--crop, -h/--headcrop, and -m/--min-len")
-    return argument
+        seq_io.print_error("error: input to {0} must be one or more integer "
+                           "values in the form INT or INT,INT".format(argname))
+    except IndexError:
+        arg1 = arg2 = int(args[0])
+
+    return (arg1, arg2)
+
+
+def self(args):
+    return args
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('f_file', metavar='in1.fastq',
+    parser.add_argument('fhandle', 
+        metavar='in1.fastq',
+        type=str,
+        action=seq_io.Open,
+        mode='rb',
+        default=sys.stdin,
         help="input reads in fastq format. Can be a file containing either "
-        "single-end or forward/interleaved reads if reads are paired-end "
-        "[required]")
+             "single-end or forward/interleaved reads if reads are paired-end "
+             "[required]")
     input_arg = parser.add_mutually_exclusive_group(required=False)
     input_arg.add_argument('--interleaved',
         action='store_true',
         help="input is interleaved paired-end reads")
-    input_arg.add_argument('--force',
-        action='store_true',
-        help="force process as single-end reads even if input is interleaved "
-        "paired-end reads")
-    input_arg.add_argument('r_file', metavar='in2.fastq', nargs='?',
+    input_arg.add_argument('-r', '--reverse',
+        dest='rhandle', 
+        metavar='in2.fastq', 
+        action=seq_io.Open,
+        mode='rb',
         help="input reverse reads in fastq format")
-    parser.add_argument('-o', '--out', metavar='FILE', dest='out_f',
-        type=seq_io.open_output, default=sys.stdout,
-        help="output trimmed reads [required]")
-    output_arg = parser.add_mutually_exclusive_group(required=False)
-    output_arg.add_argument('-v', '--out-reverse', metavar='FILE', dest='out_r',
-        type=seq_io.open_output,
+    parser.add_argument('-o', '--out', 
+        metavar='FILE', 
+        dest='out_f',
+        type=str,
+        action=seq_io.Open,
+        mode='wt',
+        default=sys.stdout,
+        help="output trimmed reads [default: stdout]")
+    parser.add_argument('-v', '--out-reverse', 
+        metavar='FILE', 
+        dest='out_r',
+        type=str,
+        action=seq_io.Open,
+        mode='wt',
         help="output trimmed reverse reads")
-    output_arg.add_argument('--out-interleaved', dest='out_interleaved',
-        action='store_true',
-        help="output interleaved paired-end reads, even if input is split")
-    parser.add_argument('-s', '--singles', metavar='FILE', dest='out_s',
-        type=seq_io.open_output,
+    parser.add_argument('-s', '--singles', 
+        metavar='FILE', 
+        dest='out_s',
+        type=str,
+        action=seq_io.Open,
+        mode='wt',
         help="output trimmed orphaned reads")
-    parser.add_argument('-f', '--out-format', metavar='FORMAT', 
-        dest='out_format', default='fastq',
-        choices=['fasta', 'fastq'],
-        help="output files format (fastq or fasta) [default: fastq]")
-    parser.add_argument('-l', '--log',
-        type=seq_io.open_output,
-        help="output log file to keep track of trimmed sequences")
-    parser.add_argument('-q', '--qual-type', metavar='TYPE', dest='qual_type',
-        type=int, default=33,
+    parser.add_argument('-q', '--qual-offset', 
+        metavar='TYPE', 
+        dest='offset',
+        type=int, 
         choices=[33, 64],
+        default=33,
         help="ASCII base quality score encoding [default: 33]. Options are "
-            "33 (for phred33) or 64 (for phred64)")
-    parser.add_argument('-m', '--min-len', metavar='LEN', dest='minlen',
-        type=get_list, default='0',
-        help="filter reads shorter than the minimum length threshold "
-        "[default: 0,0]. Different values can be provided for the forward and "
-        "reverse reads by separating them with a comma (e.g. 80,60)")
+             "33 (phred33) or 64 (phred64)")
+    parser.add_argument('-m', '--min-len', 
+        metavar='LEN [,LEN]', 
+        dest='minlen',
+        type=str, 
+        help="filter reads shorter than the minimum length threshold [default:"
+             " 0]. Different values can be provided for the forward and "
+             "reverse reads, respectively, by separating them with a comma "
+             "(e.g. 80,60), or a single value can be provided for both")
     trim_args = parser.add_argument_group('trimming options')
-    trim_args.add_argument('-O', '--trim-order', metavar='ORDER',
+    trim_args.add_argument('-O', '--trim-order', 
+        metavar='ORDER',
         dest='trim_order',
+        type=str,
         default='ltw',
-        help="order of trimming steps [default: ltw (corresponds to leading, "
-        "trailing, and sliding-window)]")
-    trim_args.add_argument('-W', '--sliding-window', metavar='FRAME',
+        help="order that the trimming methods should be applied [default: ltw]"
+             ". Available methods are l (leading), t (trailing), and w "
+             "(sliding-window)")
+    trim_args.add_argument('-W', '--sliding-window', 
+        metavar='FRAME',
         dest='sw',
-        type=parse_sw_arg,
-        help="trim both 5' and 3' ends of a read using a sliding window "
-        "approach. Input should be of the form 'window_size:qual_threshold', "
-        "where 'qual_threshold' is an integer between 0 and 42 and "
-        "'window_size' can either be length in bases or fraction of the total "
-        "read length")
-    trim_args.add_argument('-H', '--headcrop', metavar='INT,INT',
-        type=get_list, default='0',
+        type=parse_colons,
+        help="trim read ends using a sliding window approach. Input should be "
+             "of the form 'window_size:qual_threshold', where 'qual_threshold' "
+             "is an integer between 0 and 42 and 'window_size' can either be "
+             "length in bases or fraction of total read length")
+    trim_args.add_argument('-H', '--headcrop', 
+        metavar='INT [,INT]',
+        type=str,
         help="remove exactly the number of bases specified from the start of "
-        "the read. Different values can be provided for the forward and "
-        "reverse reads by separating them with a comma (e.g. 2,0)")
-    trim_args.add_argument('-C', '--crop', metavar='INT,INT',
-        type=get_list, default='0',
-        help="remove exactly the number of bases specified from the end of "
-        "the read. Different values can be provided for the forward and "
-        "reverse reads by separating them with a comma (e.g. 2,0)")
-    trim_args.add_argument('-L', '--leading', metavar='SCORE', 
+             "the reads [default: 0]. Different values can be provided for "
+             "the forward and reverse reads, respectively, by separating them "
+             "with a comma (e.g. 2,0), or a single value can be provided for "
+             "both. Cropping will always be applied first")
+    trim_args.add_argument('-C', '--crop', 
+        metavar='INT [,INT]',
+        type=str,
+        help="crop reads to the specified position [default: off]. The "
+             "value(s) should be less than the maximum read length, otherwise "
+             "no cropping will be applied. Different values can be provided "
+             "for the forward and reverse reads, respectively, by separating "
+             "them with a comma (e.g. 120,115), or a single value can be "
+             "provided for both. Cropping will always be applied first")
+    trim_args.add_argument('-L', '--leading', 
+        metavar='SCORE', 
         dest='lead_score',
         type=int,
         help="trim by removing low quality bases from the start of the read")
-    trim_args.add_argument('-T', '--trailing', metavar='SCORE', 
+    trim_args.add_argument('-T', '--trailing', 
+        metavar='SCORE', 
         dest='trail_score',
         type=int,
         help="trim by removing low quality bases from the end of the read")
-    trim_args.add_argument('--trunc-n', dest='trunc_n',
+    trim_args.add_argument('--trunc-n', 
+        dest='trunc_n',
         action='store_true',
-        help="truncate sequence at the position of the first ambiguous base")
+        help="truncate sequence at position of first ambiguous base [default: "
+             "off]. Truncation will always be applied last.")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
+    parser.add_argument('-t', '--threads',
+        action=CheckThreads,
+        type=int,
+        default=1,
+        help='number of threads to use for trimming [default: 1]')
     args = parser.parse_args()
     all_args = sys.argv[1:]
 
     seq_io.program_info('qtrim', all_args, __version__)
 
-    try:
-        fcrop, rcrop = args.crop
-    except ValueError:
-        fcrop = rcrop = args.crop[0]
-    try:
-        fheadcrop, rheadcrop = args.headcrop
-    except ValueError:
-        fheadcrop = rheadcrop = args.headcrop[0]
-    try:
-        fminlen, rminlen = args.minlen
-    except ValueError:
-        fminlen = rminlen = args.minlen[0]
+    # Track program run-time
+    start_time = time()
 
-    f_file = sys.stdin if args.f_file == '-' else args.f_file
+
+    # Assign variables based on arguments supplied by the user
+    crop = parse_commas(args.crop, "crop") if args.crop else (None, None)
+    hcrop = parse_commas(args.headcrop, "headcrop") if \
+        args.headcrop else (0, 0)
+    minlen = parse_commas(args.minlen, "minlen") if args.minlen \
+        else (0, 0)
     out_f = args.out_f
-    iterator = seq_io.get_iterator(f_file, args.r_file, args.interleaved)
+    paired = True if (args.interleaved or args.rhandle) else False
+    trunc_n = trim.truncate_by_n if args.trunc_n else self
 
-    if args.r_file and not (args.out_r or args.out_interleaved):
-        parser.error("one of -v/--out-reverse or --out-interleaved is required "
-            "when the argument -r/--reverse is used")
 
+    # Prepare the iterator based on dataset type
+    iterator = seq_io.read_iterator(args.fhandle, args.rhandle, \
+                                    args.interleaved, "fastq")
+
+
+    # Populate list of trimming tasks to perform on reads
     trim_tasks = {'l': (trim.trim_leading, args.lead_score), 
         't': (trim.trim_trailing, args.trail_score), 
         'w': (trim.adaptive_trim, args.sw)}
@@ -212,113 +396,130 @@ def main():
         if value:
             trim_steps.append(trim_tasks[task])
     if len(trim_steps) < 1 and not (args.crop or args.headcrop):
-        seq_io.print_error("error: no trimming steps were applied")
+        seq_io.print_error("error: no trimming steps were specified")
 
-    writer = seq_io.fasta_writer if (args.out_format == 'fasta') else \
-        seq_io.fastq_writer
 
-    paired = True if (args.interleaved or args.r_file) else False
- 
+    # Counters for trimming statistics
+    discarded = Counter(0)
+    passed = Counter(0)
+
+
+    # Assign variables based on dataset type (paired or single-end) 
     if paired:
-        print("\nProcessing input as paired-end reads", file=sys.stderr)
-        seq_io.logger(args.log, "Record\tForward length\tForward trimmed "
-            "length\tReverse length\tReverse trimmed length\n")
+        print("Processing input as paired-end reads", file=sys.stderr)
 
         out_s = args.out_s if args.out_s else None
-        out_r = out_f if ((args.interleaved or args.out_interleaved) and not \
-            args.out_r) else args.out_r
+        out_r = out_f if not args.out_r else args.out_r
 
-        pairs_passed = discarded_pairs = fsingles = rsingles = 0
-        for i, (forward, reverse) in enumerate(iterator):
-            identifier = forward['identifier']
-            forig = len(forward['sequence'])
-            rorig = len(reverse['sequence'])
+        output = "\nRecords processed:\t{!s}\nPassed filtering:\t{!s} " \
+                 "({:.2%})\n  Reads pairs kept:\t{!s} ({:.2%})\n  Forward " \
+                 "only kept:\t{!s} ({:.2%})\n  Reverse only kept:\t{!s} " \
+                 "({:.2%})\nRecords discarded:\t{!s} ({:.2%})\n"
 
-            forward = apply_trimming(forward, trim_steps, args.qual_type, 
-                fheadcrop, fcrop, args.trunc_n)
-            ftrim = len(forward['sequence'])
-
-            reverse = apply_trimming(reverse, trim_steps, args.qual_type, 
-                rheadcrop, rcrop, args.trunc_n)
-            rtrim = len(reverse['sequence'])
-
-            # both good
-            if ftrim >= fminlen and rtrim >= rminlen:
-                pairs_passed += 1
-                writer(out_f, forward)
-                writer(out_r, reverse)
-            # forward orphaned, reverse filtered
-            elif ftrim >= fminlen and rtrim < rminlen:
-                fsingles += 1
-                writer(out_s, forward)
-            # reverse orphaned, forward filtered
-            elif ftrim < fminlen and rtrim >= rminlen:
-                rsingles += 1
-                writer(out_s, reverse)
-            # both discarded
-            else:
-                discarded_pairs += 1
-
-            seq_io.logger(args.log, "{}\t{}\t{}\t{}\t{}\n".format(identifier, 
-                forig, ftrim, rorig, rtrim))
-
-        try:
-            i += 1
-        except UnboundLocalError:
-            seq_io.print_error("error: no sequences were found to process")
-
-        total = i * 2
-        passed = pairs_passed * 2 + fsingles + rsingles
-        print("\nRecords processed:\t{!s} ({!s} pairs)\nPassed filtering:\t"
-            "{!s} ({:.2%})\n  Paired reads kept:\t{!s} ({:.2%})\n  Forward "
-            "only kept:\t{!s} ({:.2%})\n  Reverse only kept:\t{!s} ({:.2%})"
-            "\nRead pairs discarded:\t{!s} ({:.2%})\n".format(total, i,
-            passed, passed / total, pairs_passed, pairs_passed / i,
-            fsingles, fsingles / total, rsingles, rsingles / total,
-            discarded_pairs, discarded_pairs / i), file=sys.stderr)
+        singles1 = Counter(0)
+        singles2 = Counter(0)
 
     else:
-        print("\nProcessing input as single-end reads", file=sys.stderr)
-        seq_io.logger(args.log, "Record\tLength\tTrimmed length\n")
-
         if args.out_s:
-            print("\nwarning: argument --singles used with single-end reads"
-                "... ignoring\n", file=sys.stderr)
+            print("warning: argument --singles used with single-end reads"
+                  "... ignoring\n", file=sys.stderr)
 
-        discarded = 0
-        for i, record in enumerate(iterator):
-            if i == 0:
-                first_read = record['identifier']
-            elif i == 1:
-                if first_read == record['identifier'] and not args.force:
-                    seq_io.print_error("warning: the input fastq appears to "
-                        "contain interleaved paired-end reads. Please run with "
-                        "the --force flag to proceed with processing the data "
-                        "as single-end reads")
+        if args.out_r:
+            print("warning: argument --out-reverse used when input is "
+                  "single-end... ignoring\n", file=sys.stderr)
 
-            origlen = len(record['sequence'])
-            record = apply_trimming(record, trim_steps, args.qual_type,
-                fheadcrop, fcrop, args.trunc_n)
-            trimlen = len(record['sequence'])
-            
-            if trimlen >= fminlen:
-                writer(out_f, record)
-            else:
-                discarded += 1
+        print("Processing input as single-end reads", file=sys.stderr)
 
-            seq_io.logger(args.log, "{}\t{}\t{}\n".format(record['identifier'],
-                origlen, trimlen))
+        out_s = None
+        out_r = None
 
-        try:
-            i += 1
-        except UnboundLocalError:
-            seq_io.print_error("error: no sequences were found to process. Is "
-                "the input properly formatted?")
- 
-        passed = i - discarded
-        print("\nRecords processed:\t{!s}\nPassed filtering:\t{!s} "
-        "({:.2%})\nRecords discarded:\t{!s} ({:.2%})\n".format(i, passed,
-        passed / i, discarded, discarded / i), file=sys.stderr)
+        output = "\nRecords processed:\t{!s}\nPassed filtering:\t{!s} ({:.2%})" \
+                 "\nRecords discarded:\t{!s} ({:.2%})\n"
+
+        singles1 = singles2 = None
+
+
+    max_read_threads = args.threads - 1 if args.threads > 1 else 1
+    read_queue = Queue(max_read_threads)  # Max queue prevents race conditions
+    write_queue = Queue()
+
+   
+    # Initialize threads to process reads and writes
+    read_processes = []
+    for i in range(max_read_threads):
+        read_processes.append(Process(target=trim_reads, args=(read_queue, \
+            write_queue, trim_steps, trunc_n, crop, hcrop, args.offset,)))
+        read_processes[i].start()
+
+    write_process = Process(target=write_reads, args=(write_queue, out_f, \
+        out_r, out_s, minlen, passed, discarded, singles1, singles2,))
+    write_process.start()
+
+
+    # Iterate over reads, populating read queue for trimming
+    for processed_total, records in enumerate(iterator):
+        read_queue.put(records)
+
+
+    # Send kill message to threads responsible for trimming
+    for process in read_processes:
+        read_queue.put('DONE')
+
+
+    # Wait for processes to finish before continuing
+    for process in read_processes:
+        process.join()
+
+
+    # Send kill message to threads responsible for trimming
+    while not write_queue.empty():
+        sleep(1)
+    write_queue.put('DONE')
+
+
+    # Wait for write processes to finish before continuing
+    write_process.join()
+
+
+    # Verify input file non-empty
+    try:
+        processed_total += 1
+    except UnboundLocalError:
+        seq_io.print_error("error: no sequences were found to process")
+
+
+    # Calculate and print output statistics
+    p = passed.value()
+    d = discarded.value()
+
+    if paired:
+        processed_total = processed_total * 2
+        s1, s2 = singles1.value(), singles2.value()
+        passed_total = (p * 2 + s1 + s2)
+        discarded_total = d * 2 + s1 + s2
+        pairs = p
+        frac_pairs = (pairs * 2) / processed_total
+        frac_s1 = s1 / processed_total
+        frac_s2 = s2 / processed_total
+    else:
+        passed_total = p
+        discarded_total = d
+        processed_total = discarded_total + passed_total
+        s1 = s2 = frac_s1 = frac_s2 = pairs = frac_pairs = None
+
+    frac_discarded = discarded_total / processed_total
+    frac_passed = passed_total / processed_total
+    stats = [processed_total, passed_total, frac_passed] + [i for i in (pairs, frac_pairs, s1, \
+             frac_s1, s2, frac_s2) if i != None] + [discarded_total, frac_discarded]
+    print(output.format(*tuple(stats)), file=sys.stderr)
+
+
+    # Calculate and print program run-time
+    end_time = time()
+    total_time = (end_time - start_time) / 60.0
+    print("It took {:.2e} minutes to process {!s} records\n"\
+          .format(total_time, processed_total), file=sys.stderr)
+
 
 if __name__ == "__main__":
     main()

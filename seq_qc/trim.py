@@ -1,5 +1,6 @@
 from __future__ import division
-from seq_io import print_error
+
+from seq_qc.seq_io import print_error
 import sys
 
 def translate_quality(quals, encoding=33):
@@ -20,6 +21,7 @@ def adaptive_trim(scores, trim_info):
     the quality is sufficiently high enough to trim the 5'-end of read. 
     Inspired by the trimmer sickle.
     """
+    # Number of bases to remove from either end
     start, end = 0, 0
     seqlen = len(scores)
     if seqlen == 0:
@@ -121,3 +123,16 @@ def trim_trailing(scores, threshold):
             break
 
     return (0, position)
+
+
+def truncate_by_n(record):
+    """
+    Truncate reads to the first position containing an ambiguous base
+    """
+    try:
+        nstart = record.sequence.index('N')
+        record.sequence, record.quality = record.sequence[0: nstart], \
+            record.quality[0: nstart]
+        return record
+    except ValueError:
+        return record

@@ -16,21 +16,25 @@ reads, use the file name '-' to indicate that input should be taken from
 standard input (stdin). Similarly, leaving out the -o argument will cause 
 output to be sent to standard output (stdout).
 """
-from __future__ import print_function
-from __future__ import division
 
-__author__ = "Christopher Thornton"
-__date__ = "2016-11-05"
-__version__ = "1.3.1"
+from __future__ import division
+from __future__ import print_function
 
 import argparse
 from array import array
 import hashlib
-import pairs
-import seq_io
-import sys
-import zlib
+from seq_qc import pairs, seq_io
 from screed.dna import reverse_complement
+import sys
+from time import time
+import zlib
+
+__author__ = "Christopher Thornton"
+__license__ = 'GPLv2'
+__maintainer__ = 'Christopher Thornton'
+__status__ = "Production"
+__version__ = "1.4.0"
+
 
 def compare_seqs(query, template):
     """
@@ -54,11 +58,10 @@ def compare_seqs(query, template):
 
     return 0
 
-def self(item):
-    return item
 
 def split_by_length(sequence, length):
     return sequence[:length], sequence[length:]
+
 
 def replicate_status(query_position, key, unique_db, search_db):
     """
@@ -98,46 +101,76 @@ def replicate_status(query_position, key, unique_db, search_db):
 
     return (None, None, None)
 
+
+def do_nothing(*args):
+    pass
+
+
+def self(item):
+    return item
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__,        
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('f_file', metavar='in1.fast<q|a>', 
-        help="input forward or interleaved reads [required]")
+    parser.add_argument('fhandle',
+        metavar='in1.fast<q|a>', 
+        type=str,
+        action=seq_io.Open,
+        mode='rb',
+        default=sys.stdin,
+        help="input reads in fastq or fasta format. Can be a file containing "
+             "either single-end or forward/interleaved reads if reads are "
+             "paired-end [required]")
     input_arg = parser.add_mutually_exclusive_group(required=True)
     input_arg.add_argument('--interleaved',
         action='store_true',
         help="input is interleaved paired-end reads")
-    input_arg.add_argument('r_file', metavar='in2.fast<q|a>', nargs='?',
+    input_arg.add_argument('-r', '--reverse',
+        dest='rhandle', 
+        metavar='in2.fast<q|a>', 
+        action=seq_io.Open,
+        mode='rb',
         help="input reverse reads")
-    parser.add_argument('-o', '--out', dest='out_f', metavar='FILE',
-        type=seq_io.open_output, default=sys.stdout,
-        help="output reads")
-    output_arg = parser.add_mutually_exclusive_group(required=False)
-    output_arg.add_argument('-v', '--out-reverse', metavar='FILE', dest='out_r',
-        type=seq_io.open_output,
+    parser.add_argument('-o', '--out',
+        metavar='FILE',
+        dest='out_f',
+        type=str,
+        action=seq_io.Open,
+        mode='wt',
+        default=sys.stdout,
+        help="output trimmed reads [default: stdout]")
+    parser.add_argument('-v', '--out-reverse', 
+        metavar='FILE', 
+        dest='out_r',
+        type=str,
+        action=seq_io.Open,
+        mode='wt',
         help="output reverse reads")
-    output_arg.add_argument('--out-interleaved', dest='out_interleaved',
-        action='store_true',
-        help="output interleaved paired-end reads, even if input is split")
-    parser.add_argument('-f', '--out-format', metavar='FORMAT',
-        dest='out_format',
+    parser.add_argument('-f', '--format', 
+        metavar='FORMAT',
+        dest='format',
         default='fastq',
         choices=['fasta', 'fastq'],
-        help="output file format. Can be fasta or fastq. [default: fastq]")
-    parser.add_argument('-l', '--log', metavar='LOG',
-        type=seq_io.open_output,
+        help="sequence file format. Can be fasta or fastq. [default: fastq]")
+    parser.add_argument('-l', '--log', 
+        type=str,
+        action=seq_io.Open,
+        mode='wt',
         help="output log file to keep track of replicates")
     dup_args = parser.add_argument_group('replicate types')
     dup_args.add_argument('--prefix',
         action='store_true',
         help="replicate can be a 5' prefix of another read")
-    dup_args.add_argument('--rev-comp', dest='rev_comp',
+    dup_args.add_argument('--rev-comp',
+        dest='rev_comp',
         action='store_true',
         help="replicate can be the reverse-complement of another read")
-    parser.add_argument('--reduce-memory', dest='mem_use',
+    parser.add_argument('--reduce-memory', 
+        dest='mem_use',
         action='store_true',
         help="reduce the mount of memory that the program uses. This could "
-        "result in a drastic increase in run time.")
+             "result in a drastic increase in run time.")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
@@ -146,36 +179,42 @@ def main():
 
     seq_io.program_info('filter_replicates', all_args, __version__)
 
-    if args.r_file and not (args.out_r or args.out_interleaved):
-        parser.error("one of -v/--out-reverse or --out-interleaved is required "
-            "when the argument -r/--reverse is used")
+    # Track program run-time
+    start_time = time()
 
-    f_file = sys.stdin if args.f_file == '-' else args.f_file
-    out_f = args.out_f
-    iterator = seq_io.get_iterator(f_file, args.r_file, args.interleaved)
 
-    seq_io.logger(args.log, "Replicate\tTemplate\tType\n")
-
+    # Assign variables based on arguments supplied by the user
+    out_f = args.out_f.write
+    logger = args.log.write if args.log else do_nothing
     compress = zlib.compress if args.mem_use else self
     decompress = zlib.decompress if args.mem_use else self
+    out_r = out_f if not args.out_r else args.out_r.write
+    out_format = ">{0} {1}\n{2}\n" if args.format == "fasta" else \
+                 "@{0} {1}\n{2}\n+\n{3}\n"
 
-    writer = seq_io.fasta_writer if args.out_format == 'fasta' else \
-        seq_io.fastq_writer
+    # Prepare the iterator based on dataset type
+    iterator = seq_io.read_iterator(args.fhandle, args.rhandle, \
+                                    args.interleaved, args.format)
 
+
+    logger(args.log, "Replicate\tTemplate\tType\n")
+
+
+    # Iterate over records, storing unique records in uniques
     seq_db = {}
     uniques = {}
-    for i, (forward, reverse) in enumerate(iterator):
-        ident = forward['identifier']
-        fdesc, rdesc = (forward['description'], reverse['description'])
-        fseq, rseq = (forward['sequence'], reverse['sequence'])
-        fqual, rqual = (forward['quality'], reverse['quality'])
+    for i, record in enumerate(iterator):
+        ident = (record.forward.id, record.reverse.id)
+        fdesc, rdesc = record.forward.description, record.reverse.description
+        fseq, rseq = (record.forward.sequence, record.reverse.sequence)
+        fqual, rqual = (record.forward.quality, record.reverse.quality)
 
         flen, rlen = len(fseq), len(rseq)
 
         uniques[i] = (fseq + rseq, flen, compress(fqual + rqual), ident)
 
         fsubsize, rsubsize = ((20, 20) if args.prefix else (flen, rlen))
-        key = hashlib.md5(fseq[:fsubsize] + rseq[:rsubsize]).digest()
+        key = hashlib.md5((fseq[:fsubsize] + rseq[:rsubsize]).encode()).digest()
 
         dup_pos, temp_pos, dup_type = replicate_status(i, key, uniques, seq_db)
 
@@ -194,7 +233,8 @@ def main():
         # sequence is unique, so check reverse-complement if set
         if args.rev_comp:
             f_rc, r_rc = pairs.reverse_complement_paired(fseq, rseq)
-            rckey = hashlib.md5(f_rc[:fsubsize] + r_rc[:rsubsize]).digest()
+            rckey = hashlib.md5((f_rc[:fsubsize] + r_rc[:rsubsize]).encode())\
+                .digest()
             dup_pos, temp_pos, dup_type = replicate_status(i, rckey,  uniques,
                 seq_db)
             if dup_pos:
@@ -215,30 +255,41 @@ def main():
         except KeyError:
             seq_db[key] = [i]
 
+
+    # Make sure input file non-empty
     try:
-        i += 1
+        i += 1  #number records processed
     except UnboundLocalError:
         seq_io.print_error("error: no sequences were found to process.")
 
-    out_r = out_f if ((args.interleaved or args.out_interleaved) and not \
-        args.out_r) else args.out_r
 
-
+    # Write unique records
     for j, index in enumerate(sorted(uniques.keys())):
         record = uniques[index]
-        ident = record[3]
+        fident, rident = record[3]
+
         fseq, rseq = split_by_length(record[0], record[1])
         fqual, rqual = split_by_length(decompress(record[2]), record[1])
-        writer(out_f, {'identifier': ident, 'description': fdesc, 
-            'sequence': fseq, 'quality': fqual})
-        writer(out_r, {'identifier': ident, 'description': rdesc, 
-            'sequence': rseq, 'quality': rqual})
 
-    j += 1
 
+        out_f(out_format.format(fident, fdesc, fseq, fqual))
+        out_r(out_format.format(rident, rdesc, rseq, rqual))
+
+    j += 1  #number remaining records after dereplication
+
+
+    # Calculate and print output statistics
     num_reps = i - j
     print("\nRead Pairs processed:\t{!s}\nReplicates found:\t{!s} "
         "({:.2%})\n".format(i, num_reps, num_reps / i), file=sys.stderr)
+
+
+    # Calculate and print program run-time
+    end_time = time()
+    total_time = (end_time - start_time) / 60.0
+    print("It took {:.2e} minutes to process {!s} records\n"\
+          .format(total_time, i), file=sys.stderr)
+
 
 if __name__ == "__main__":
     main()
