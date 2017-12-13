@@ -34,8 +34,8 @@ from time import sleep, time
 __author__ = "Christopher Thornton"
 __license__ = 'GPLv2'
 __maintainer__ = 'Christopher Thornton'
-__version__ = "2.0.0"
 __status__ = "Production"
+__version__ = "2.0.0"
 
 
 class Counter(object):

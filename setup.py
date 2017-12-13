@@ -1,7 +1,5 @@
 from setuptools import setup, Extension
 
-bernoulli = Extension('bernoulli', sources=['seq_qc/bernoullimodule.c'])
-
 setup(name='seq-qc',
       version='1.6.0',
       packages=['seq_qc',],
@@ -26,12 +24,10 @@ setup(name='seq-qc',
       include_package_data=True,
       zip_safe=False,
       install_requires=['screed',],
-      ext_modules=[bernoulli,],
       entry_points={
           'console_scripts': [
               'qtrim = seq_qc.qtrim:main',
               'filter_replicates = seq_qc.filter_replicates:main',
-              'error_filter = seq_qc.error_filter:main',
               'demultiplex_headers = seq_qc.demultiplex:main'
           ]
       }
