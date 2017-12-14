@@ -14,7 +14,6 @@ Python 3.4+
 
 Python Libraries:
 
-* screed
 * arandomness
 * bio_utils
 

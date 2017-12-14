@@ -24,7 +24,6 @@ import argparse
 from array import array
 import hashlib
 from seq_qc import pairs, seq_io
-from screed.dna import reverse_complement
 import sys
 from time import time
 import zlib
@@ -100,6 +99,32 @@ def replicate_status(query_position, key, unique_db, search_db):
                         return (search_position, query_position, 'prefix')
 
     return (None, None, None)
+
+
+def reverse_complement(seq):
+    """Take the reverse complement of a nucleotide sequence"""
+    r = reverse(seq)
+    rc = complement(r)
+
+    return rc
+
+
+__complementaryBasePairs = {"A": "T", "C": "G", "G": "C", "T": "A", "N": "N"}
+
+def complement(seq):
+    """Take the complement of a nucleotide sequence"""
+    try:
+        c = "".join(__complementaryBasePairs[i] for i in seq)
+    except KeyError:
+        seq_io.print_error("error: non-cannon representation of a nucleotide "
+                           "sequence provided. String is {0}".format(seq))
+
+    return c
+
+
+def reverse(seq):
+    """Take the reverse of a sequence"""
+    return seq[::-1]
 
 
 def do_nothing(*args):

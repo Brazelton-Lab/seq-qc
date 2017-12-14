@@ -23,7 +23,7 @@ setup(name='seq-qc',
       license='GPLv2',
       include_package_data=True,
       zip_safe=False,
-      install_requires=['screed',],
+      install_requires=['bio_utils', 'arandomness',],
       entry_points={
           'console_scripts': [
               'qtrim = seq_qc.qtrim:main',
