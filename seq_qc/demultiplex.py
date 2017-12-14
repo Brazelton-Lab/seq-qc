@@ -23,6 +23,7 @@ from bz2 import BZ2File
 from gzip import GzipFile
 import io
 from seq_qc import seq_io
+from statistics import mean, median, stdev
 import sys
 from time import time
 
@@ -39,7 +40,7 @@ class BarcodeEntry(object):
     Attributes:
             id (str): Barcode identifier
 
-            index (str): Barcode sequence and multiplex group, if applicable
+            barcode (str): Barcode sequence and multiplex group, if applicable
 
             count (int): Number of times template barcode has been observed
     """
@@ -53,9 +54,8 @@ class BarcodeEntry(object):
     def increment(self):
         self.count += 1
 
-
-def do_nothing(*args):
-    pass
+    def sequence(self):
+        return self.barcode.strip(':')[0]
 
 
 def hamming_distance(s1, s2):
@@ -74,6 +74,10 @@ def return_last(last):
 def sort_by_last(tuple_list):
     """Sort list of tuples or lists by the value of their last item"""
     return sorted(tuple_list, reverse=False, key=return_last)
+
+
+def do_nothing(*args):
+    pass
 
 
 def main():
@@ -121,6 +125,17 @@ def main():
         help="string to append to the end of the file name. The default is to "
              "append the file format (fastq or fasta) and the strand for PE "
              "data (forward, reverse, interleaved).")
+    parser.add_argument('-c', '--hist',
+        metavar='FILE',
+        action=seq_io.Open,
+        mode='w',
+        help="output histogram of barcode counts. This can be used for "
+             "graphing the error distribution of a barcode sequence")
+    parser.add_argument('--no-out',
+        dest='no_out',
+        action='store_true',
+        help="do not write sequences to a file. Only output a histogram of "
+             "barcode counts")
     parser.add_argument('--force',
         action='store_true',
         help="create new file for every barcode found in input")
@@ -151,6 +166,10 @@ def main():
         parser.error("error: argument -b/--barcodes must be used with "
                      "-d/--distance")
 
+    if args.no_out and not args.hist:
+        parser.error("error: argument -c/--hist must be used with "
+                     "--no-out")
+
     # Track program run-time
     start_time = time()
 
@@ -173,6 +192,7 @@ def main():
         exact_total = mismatch_total = unknowns = None
 
     suffix = args.suffix if args.suffix else args.format
+    out_hist = args.hist.write if args.hist else do_nothing
 
     if args.gzip:
         compression = '.gz'
@@ -191,7 +211,7 @@ def main():
 
 
     # Store user-supplied barcodes in memory
-    tags = {}
+    template_barcodes = {}
     names = []
     is_grouped = False
     if args.barcodes:
@@ -219,9 +239,9 @@ def main():
 
             # Add to dictionary of template barcodes
             try:
-                dict_group = tags[group]
+                dict_group = template_barcodes[group]
             except KeyError:
-                tags[group] = {barcode: tag}
+                template_barcodes[group] = {barcode: tag}
             else:
                 # Verify unique sample names and calculate barcode distances
                 for i in dict_group:
@@ -251,7 +271,7 @@ def main():
         bstats = [barcodes_total]
 
         if is_grouped:
-            for mul_group in tags:
+            for mul_group in template_barcodes:
                 out_bstats += "Mulitplex group - {!s}\n  Number of template "\
                               "barcodes within group:\t\t\t{!s}\n  Minimum "\
                               "Hamming distance between barcodes within "\
@@ -261,7 +281,7 @@ def main():
                 group_dists = [return_last(i) for i in barcode_dists if \
                                i[0] == group]
 
-                bstats += [mul_group, len(tags[mul_group]), min(group_dists), \
+                bstats += [mul_group, len(template_barcodes[mul_group]), min(group_dists), \
                            max(group_dists)]
 
         else:
@@ -278,46 +298,63 @@ def main():
 
     # Demultiplex reads
     outfiles = {}
+    sequence_barcodes = []
     for processed_total, record in enumerate(iterator):
         # Prepare output dependant on whether paired or unpaired
         try:
-            tag = record.forward.description.split(':')[-1]
+            seq_tag = record.forward.description.split(':')[-1]
             header = record.forward.id.split(':')
             outf = record.forward.write()
             outr = record.reverse.write()
         except AttributeError:
-            tag = record.description.split(':')[-1]
+            seq_tag = record.description.split(':')[-1]
             header = record.id.split(':')
             outf = record.write()
             outr = None
 
         run_info = tuple(header[2: 4])
-        file_prefix = "{0}_{1}_{2}".format(tag, *run_info)
+        file_prefix = "{0}_{1}_{2}".format(seq_tag, *run_info)
 
-        if (not tag.isalpha()) or (len(tag) != 6):
+        if (not seq_tag.isalpha()) or (len(seq_tag) != 6):
             seq_io.print_error("error: the format of the sequence headers is "
                                "incompatible with this method. Demultiplexing "
                                "these reads will require a different method "
                                "to be used instead")
 
+
+        # Increment occurences of barcode
+        index = "{0}:{1}:{2}".format(seq_tag, *run_info)
+        already_seen = False
+        for i in sequence_barcodes:
+            if index == i.barcode:
+                i.increment()
+                already_seen = True
+
+        if not already_seen:
+            seq_entry = BarcodeEntry()
+            seq_entry.barcode = index
+            seq_entry.count = 1
+            sequence_barcodes.append(seq_entry)
+
+
         if args.barcodes:
             # Only consider other barcodes within the same multiplex group
             if is_grouped:
                 try:
-                    relevant_tags = tags[":".join(run_info)]
+                    relevant_template_barcodes = template_barcodes[":".join(run_info)]
                 except KeyError:
                     seq_io.warning("warning: run information in sequence headers doesn't match any in the provides barcodes file")
                     continue
             else:
                 # Consider all barcodes within file
-                relevant_tags = tags['']
+                relevant_template_barcodes = template_barcodes['']
 
 
             # Find the template barcode with the smallest hamming distance to 
             # the record sequence barcode
             if args.distance:
-                distances = sort_by_last([(i, hamming_distance(tag, i)) for i \
-                                         in relevant_tags])
+                distances = sort_by_last([(i, hamming_distance(seq_tag, i)) for i \
+                                         in relevant_template_barcodes])
 
                 min_tag, min_dist = distances[0]  #minimum is the first element
 
@@ -332,17 +369,17 @@ def main():
                                          "equally similar to more than one "
                                          "template barcode. Unable to determine "
                                          "which partition to assign it to"\
-                                         .format(tag, ':'.join(header)))
+                                         .format(seq_tag, ':'.join(header)))
                     continue
                 else:
                     # Assign to template partition if within threshold distance
                     if min_dist <= args.distance:
-                        tag = min_tag
+                        seq_tag = min_tag
  
 
             # Verify sequence tag in list of provided barcodes
             try:
-                file_prefix = relevant_tags[tag].id
+                file_prefix = relevant_template_barcodes[seq_tag].id
             except KeyError:
                 unknowns += 1
                 if not args.force:
@@ -350,38 +387,61 @@ def main():
                                          "not correspond to any of the "
                                          "template barcodes provided. Use "
                                          "--force to write these records "
-                                         "anyway".format(tag))
+                                         "anyway".format(seq_tag))
                     continue
 
-
+        
         # Write record to appropriate output file
-        try:
-            outfiles[file_prefix][0](outf)
-            outfiles[file_prefix][1](outr)
+        if not args.no_out:
+            try:
+                outfiles[file_prefix][0](outf)
+                outfiles[file_prefix][1](outr)
 
-        except KeyError:
-            # Barcode not encountered previously, open new file for writes
-            if args.rhandle:
-                handle1 = io.TextIOWrapper(algo("{0}.forward.{1}{2}"\
-                    .format(file_prefix, suffix, compression), mode='wb'))
-                handle2 = io.TextIOWrapper(algo("{0}.reverse.{1}{2}"\
-                    .format(file_prefix, suffix, compression), mode='wb'))
-                write1, write2 = handle1.write, handle2.write
-            elif args.interleaved:
-                handle1 = io.TextIOWrapper(algo("{0}.interleaved.{1}{2}"\
-                    .format(file_prefix, suffix, compression), mode='wb'))
-                write1 = write2 = handle1.write
-            else:
-                handle1 = io.TextIOWrapper(algo("{0}.{1}{2}".format(file_prefix, \
-                    suffix, compression), mode='wb'))
-                write1 = handle1.write
-                write2 = do_nothing
+            except KeyError:
+                # Barcode not encountered previously, open new file for writes
+                if args.rhandle:
+                    handle1 = io.TextIOWrapper(algo("{0}.forward.{1}{2}"\
+                        .format(file_prefix, suffix, compression), mode='wb'))
+                    handle2 = io.TextIOWrapper(algo("{0}.reverse.{1}{2}"\
+                        .format(file_prefix, suffix, compression), mode='wb'))
+                    write1, write2 = handle1.write, handle2.write
+                elif args.interleaved:
+                    handle1 = io.TextIOWrapper(algo("{0}.interleaved.{1}{2}"\
+                        .format(file_prefix, suffix, compression), mode='wb'))
+                    write1 = write2 = handle1.write
+                else:
+                    handle1 = io.TextIOWrapper(algo("{0}.{1}{2}".format(file_prefix, \
+                        suffix, compression), mode='wb'))
+                    write1 = handle1.write
+                    write2 = do_nothing
 
-            outfiles[file_prefix] = (write1, write2)
+                outfiles[file_prefix] = (write1, write2)
 
-            # Should be safe to write now
-            outfiles[file_prefix][0](outf)
-            outfiles[file_prefix][1](outr)
+                # Should be safe to write now
+                outfiles[file_prefix][0](outf)
+                outfiles[file_prefix][1](outr)
+
+
+    # Write output histogram
+    if args.hist:
+        num_seq_tags = len(sequence_barcodes)
+        out_hist("#Total:  {}\n".format(num_seq_tags))
+
+        barcode_abundances = [i.count for i in sequence_barcodes]
+        b_mean, b_median, b_sd = (mean(barcode_abundances), \
+                                  median(barcode_abundances), \
+                                  stdev(barcode_abundances))
+
+        out_hist("#Mean:   {:.2}\n#Median: {:.2}\n#STDev:  {:.2}\n"\
+                 .format(b_mean, b_median, b_sd))
+        
+        for abundance in sorted(set(barcode_abundances)):
+            counts = barcode_abundances.count(abundance)
+            out_hist("{0}\t{1}\n".format(abundance, counts))
+
+        print("Sequence barcodes found:\t{!s}\n  Mean abundance:\t\t{:.2}\n"
+              "  Median abundance:\t\t{:.2}\n  Abundance SD:\t\t\t{:.2}\n"\
+              .format(num_seq_tags, b_mean, b_median, b_sd), file=sys.stderr)
 
 
     # Verify input file non-empty
@@ -392,10 +452,11 @@ def main():
 
 
     # Calculate and print output statistics
-    partitions_total = len(outfiles)
-    stats = [processed_total, partitions_total] + [i for i in \
-             (exact_total, mismatch_total, unknowns) if i != None]
-    print(outstats.format(*tuple(stats)), file=sys.stderr)
+    if not args.no_out:
+        partitions_total = len(outfiles)
+        stats = [processed_total, partitions_total] + [i for i in \
+                 (exact_total, mismatch_total, unknowns) if i != None]
+        print(outstats.format(*tuple(stats)), file=sys.stderr)
 
 
     # Calculate and print program run-time
