@@ -31,7 +31,7 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv2'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Production"
-__version__ = "0.2.0"
+__version__ = "1.0.0"
 
 
 class BarcodeEntry(object):
@@ -315,7 +315,7 @@ def main():
 
         # Verify headers are formatted as Casava 1.8
         try:
-            run_info = tuple(header[2: 4])
+            run_info = tuple(header[1: 4])  #run id, flowcell id, lane
         except IndexError:
             seq_io.print_error("error: the format of the sequence headers is "
                                "incompatible with this method. Demultiplexing "

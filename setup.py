@@ -1,7 +1,7 @@
 from setuptools import setup, Extension
 
 setup(name='seq-qc',
-      version='1.6.0',
+      version='2.0.0',
       packages=['seq_qc',],
       description='utilities for performing various preprocessing steps on '
           'sequencing reads',
@@ -11,7 +11,7 @@ setup(name='seq-qc',
           'License :: OSI Approved :: GNU General Public License v2 (GPLv2)',
           'Natural Language :: English',
           'Operating System :: OS Independent',
-          'Programming Language :: Python :: 3.6',
+          'Programming Language :: Python :: 3.4',
           'Topic :: Scientific/Engineering :: Bio-Informatics',
           'Topic :: Software Development :: Libraries :: Python Modules'
       ],
@@ -27,8 +27,8 @@ setup(name='seq-qc',
       entry_points={
           'console_scripts': [
               'qtrim = seq_qc.qtrim:main',
-              'filter_replicates = seq_qc.filter_replicates:main',
-              'demultiplex_headers = seq_qc.demultiplex:main'
+              'filter_replicates = seq_qc.replicates:main',
+              'demultiplex_by_header = seq_qc.demultiplex:main'
           ]
       }
       )
