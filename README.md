@@ -25,22 +25,23 @@ pip install seq_qc
 ## Usage
 
 filter_replicates takes as input fastq or fasta files. Paired reads can either 
-be split in separate files or can be in a single, interleaved file. The types 
-of replicates that filter_replicates can search for are exact, 5'-prefix, and 
+be split in separate files or can be in a single, interleaved file. 
+filter_replicates currently supports searching for are exact, 5'-prefix, and 
 reverse-complement replicates.
 
 ### Examples
 
-    filter_replicates -1 input_forward.fastq -2 input_reverse.fastq --prefix \
-    --rev-comp
+    filter_replicates --prefix --rev-comp --reverse input_reverse.fastq \
+        input_forward.fastq
 
-    filter_replicates -1 input_forward.fastq.gz -2 input_reverse.fastq.gz -o \
-    output_forward.fastq.gz -v output_reverse.fastq.gz --prefix --rev-comp
+    filter_replicates --prefix --rev-comp -o output_forward.fastq.gz -v \
+        output_reverse.fastq.gz --reverse input_reverse.fastq.gz \
+        input_forward.fastq.gz
 
-    filter_replicates -1 input_interleaved.fastq -o output_interleaved.fasta \
-    --interleaved --format fasta --log output.log
+    filter_replicates --interleaved -o output_interleaved.fasta \
+        --format fasta --log output.log input_interleaved.fasta
 
-    filter_replicates -1 input_singles.fastq -o output_singles.fastq
+    filter_replicates -o output_singles.fastq input_singles.fastq
 
 qtrim takes only fastq files as input. It can perform a variety of trimming 
 steps - including trimming low quality bases from the start and end of a 
@@ -50,16 +51,23 @@ read to a desired length by removing bases from the start or end of the read.
 
 ### Examples
 
-    qtrim -1 input_forward.fastq.gz -2 input_reverse.fastq.gz -o \
-    output_forward.fastq.gz -v output_reverse.fastq.gz -s \
-    output_singles.fastq.gz --qual-type phred33 --sliding-window 10:20
+    qtrim -1 -o \
+    output_forward.fastq.gz --qual-type phred33 --sliding-window 10:20 -v \
+        out_reverse.fastq.gz -s out_singles.fastq.gz --reverse \
+        in_reverse.fastq.gz in_forward.fastq.gz
 
-    qtrim -1 input_interleaved.fastq -o output_interleaved.fastq --interleaved \
-    --leading 20 --trailing 20 --trunc-n --min-len 60
+    qtrim --threads 4 --interleaved --leading 20 --trailing 20 --trunc-n \
+        --min-len 60 -o out_interleaved.fastq in_interleaved.fastq
+
+demultiplex_headers will split sequences into separate files by the barcode 
+sequence found in the sequence headers. Headers must use the Casava 1.8 format
+for demultiplexing to work. An optional barcodes file can be provided that maps
+desired output filenames to the barcodes expected in the input Fastq/a file.
+See demultiplex_headers --help for formatting requirements.
 
 ### Examples
 
-    demultiplex_headers --barcodes barcode_map.tsv input_forward.fastq.gz \
-    input_reverse.fastq.gz
+    demultiplex_headers --barcodes barcode_map.tsv --distance 2 --hist \
+        barcodes.hist --reverse in_reverse.fastq.gz input_forward.fastq.gz
 
     demultiplex_headers --bzip2 --interleaved input_interleaved.fastq.gz
