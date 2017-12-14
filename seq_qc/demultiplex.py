@@ -39,14 +39,15 @@ class BarcodeEntry(object):
     Attributes:
             id (str): Barcode identifier
 
-            sequence (str): Barcode sequence
+            index (str): Barcode sequence and multiplex group, if applicable
 
             count (int): Number of times template barcode has been observed
     """
     def __init__(self, initval=0):
         """Initialize attributes to store Barcode entry data"""
         self.id = None
-        self.sequence = None
+        self.barcode = None
+        self.group = None
         self.count = initval
 
     def increment(self):
@@ -105,11 +106,15 @@ def main():
         metavar='FILE',
         action=seq_io.Open,
         mode='r',
-        help="file containing sample names mapped to the appropriate barcode "
-             "sequences, in tab-separated format, with sample names in the "
-             "first column. If this argument is unused, and the argument "
-             "--force is given,the output files will be named for the "
-             "barcode sequence found in the fasta\q file.")
+        help="file containing sample names mapped to template barcode "
+             "sequences, in tab-separated format. The first column should "
+             "contain sample names and the second column should contain the "
+             "appropriate barcodes. An optional third column can be used to "
+             "assign barcodes to 'multiplex groups'. The name of a multiplex "
+             "group should have first the run id, then the flowcell lane, "
+             "separated by a colon (e.g. 432:4). If this argument is unused "
+             "and --force is provided instead, the output files will be named "
+             "for the barcode and run information found in the headers.")
     parser.add_argument('-s', '--suffix', 
         metavar='STR',
         type=str,
@@ -152,18 +157,18 @@ def main():
 
     # Assign variables based on arguments supplied by the user
     if args.barcodes and args.distance > 0:
-        outstats = "Records processed:\t{0}\nBarcode partitions created:\t{1}"\
+        outstats = "Records processed:\t\t{0}\nBarcode partitions created:\t{1}"\
                    "\nSequence barcodes with -\n  exact match to a template:"\
                    "\t{2}\n  one or more mismatchs:\t{3}\nSequences with "\
                    "unknown barcode:\t{4}\n"
         exact_total = mismatch_total = unknowns = 0
     elif args.barcodes and args.distance == 0:
-        outstats = "Records processed:\t{0}\nBarcode partitions created:\t{1}"\
+        outstats = "Records processed:\t\t{0}\nBarcode partitions created:\t{1}"\
                    "\nSequences with unknown barcode:\t{2}\n"
         exact_total = mismatch_total = None
         unknowns = 0
     else:
-        outstats = "Records processed:\t{0}\nBarcode partitions created:\t{1}"\
+        outstats = "Records processed:\t\t{0}\nBarcode partitions created:\t{1}"\
                    "\n"
         exact_total = mismatch_total = unknowns = None
 
@@ -182,31 +187,93 @@ def main():
 
     # Prepare the iterator based on dataset type
     iterator = seq_io.read_iterator(args.fhandle, args.rhandle, \
-                                   args.interleaved, args.format)
+                                    args.interleaved, args.format)
 
 
-    # Store list of user-supplied barcodes
+    # Store user-supplied barcodes in memory
     tags = {}
+    names = []
+    is_grouped = False
     if args.barcodes:
-        for line in args.barcodes:
+        barcode_dists = []
+        for barcodes_total, line in enumerate(args.barcodes):
             tag = BarcodeEntry()
+            group = ''
 
-            # Verify barcodes file correctly formatted
+            # Verify that barcodes file is correctly formatted
             try:
-                name, sequence = line.strip().split('\t')
+                # Has filename and barcode only
+                name, barcode = line.strip().split('\t')
             except ValueError:
-                seq_io.print_error("error: barcode mapping file does not "
-                                   "appear to be formatted correctly")
-
-            # Verify unique sample names
-            if name in [i.id for i in tags.values()]:
-                seq_io.print_error("error: the same sample name is used for "
-                                   "more than one barcode sequence")
+                try:
+                    # Has filename, barcode, and multiplex group
+                    name, barcode, group = line.strip().split('\t')
+                    is_grouped = True
+                except ValueError:
+                    seq_io.print_error("error: barcode mapping file does not "
+                                       "appear to be formatted correctly")
 
             tag.id = name
-            tag.sequence = sequence
+            tag.barcode = barcode
+            tag.group = group
 
-            tags[sequence] = tag
+            # Add to dictionary of template barcodes
+            try:
+                dict_group = tags[group]
+            except KeyError:
+                tags[group] = {barcode: tag}
+            else:
+                # Verify unique sample names and calculate barcode distances
+                for i in dict_group:
+                    if name == dict_group[i].id:
+                        seq_io.print_error("error: the same sample name is "
+                                           "used for more than one template "
+                                           "barcode")
+
+                    barcode_dists.append((group, hamming_distance(dict_group[i]\
+                                         .barcode, barcode)))
+
+                if barcode not in dict_group:
+                    dict_group[barcode] = tag
+                else:
+                    seq_io.error("error: redundant template barcodes found")
+
+
+        # Verify non-empty barcodes file
+        try:
+            barcodes_total += 1
+        except UnboundLocalError:
+            seq_io.print_error("error: no sequences were found to process")
+
+
+        # Barcode statistics
+        out_bstats = "Template barcodes read:\t\t\t\t\t\t{!s}\n"
+        bstats = [barcodes_total]
+
+        if is_grouped:
+            for mul_group in tags:
+                out_bstats += "Mulitplex group - {!s}\n  Number of template "\
+                              "barcodes within group:\t\t\t{!s}\n  Minimum "\
+                              "Hamming distance between barcodes within "\
+                              "group:\t{!s}\n  Maximum Hamming distance "\
+                              "between barcodes within group:\t{!s}\n"
+
+                group_dists = [return_last(i) for i in barcode_dists if \
+                               i[0] == group]
+
+                bstats += [mul_group, len(tags[mul_group]), min(group_dists), \
+                           max(group_dists)]
+
+        else:
+            out_bstats += "Minimum Hamming distance between all barcodes:\t"\
+                          "{!s}\nMaximum Hamming distance between all barcodes:"\
+                          "\t{!s}\n"
+
+            all_dists = [return_last(i) for i in barcode_dists]
+
+            bstats += [min(all_dists), max(all_dists)]
+
+        print(out_bstats.format(*tuple(bstats)), file=sys.stderr)
 
 
     # Demultiplex reads
@@ -215,14 +282,17 @@ def main():
         # Prepare output dependant on whether paired or unpaired
         try:
             tag = record.forward.description.split(':')[-1]
-            ident = record.forward.id
+            header = record.forward.id.split(':')
             outf = record.forward.write()
             outr = record.reverse.write()
         except AttributeError:
             tag = record.description.split(':')[-1]
-            ident = record.id
+            header = record.id.split(':')
             outf = record.write()
             outr = None
+
+        run_info = tuple(header[2: 4])
+        file_prefix = "{0}_{1}_{2}".format(tag, *run_info)
 
         if (not tag.isalpha()) or (len(tag) != 6):
             seq_io.print_error("error: the format of the sequence headers is "
@@ -230,51 +300,58 @@ def main():
                                "these reads will require a different method "
                                "to be used instead")
 
-
-        # Find the template barcode with the smallest hamming distance to the 
-        # record sequence barcode
-        if args.distance:
-            distances = sort_by_last([(i.sequence, hamming_distance(tag, \
-                                     i.sequence)) for i in tags.values()])
-
-            min_tag, min_dist = distances[0]
-
-            if min_dist == 0:
-                exact_total += 1
+        if args.barcodes:
+            # Only consider other barcodes within the same multiplex group
+            if is_grouped:
+                try:
+                    relevant_tags = tags[":".join(run_info)]
+                except KeyError:
+                    seq_io.warning("warning: run information in sequence headers doesn't match any in the provides barcodes file")
+                    continue
             else:
-                mismatch_total += 1
+                # Consider all barcodes within file
+                relevant_tags = tags['']
 
-            # Determine if more than one closest match
-            if [i[1] for i in distances].count(min_dist) > 1:
-                seq_io.print_warning("warning: barcode {0} in sequence {1} is "
-                                     "equally similar to more than one "
-                                     "template barcode. Unable to determine "
-                                     "which partition to assign it to"\
-                                     .format(tag, ident))
-                continue
-            else:
-                if min_dist <= args.distance:
-                    tag = min_tag
+
+            # Find the template barcode with the smallest hamming distance to 
+            # the record sequence barcode
+            if args.distance:
+                distances = sort_by_last([(i, hamming_distance(tag, i)) for i \
+                                         in relevant_tags])
+
+                min_tag, min_dist = distances[0]  #minimum is the first element
+
+                if min_dist == 0:
+                    exact_total += 1
+                else:
+                    mismatch_total += 1
+
+                # Determine if more than one closest match
+                if [i[1] for i in distances].count(min_dist) > 1:
+                    seq_io.print_warning("warning: barcode {0} in sequence {1} is "
+                                         "equally similar to more than one "
+                                         "template barcode. Unable to determine "
+                                         "which partition to assign it to"\
+                                         .format(tag, ':'.join(header)))
+                    continue
+                else:
+                    # Assign to template partition if within threshold distance
+                    if min_dist <= args.distance:
+                        tag = min_tag
  
 
-        # Verify sequence tag in list of provided barcodes
-        if args.barcodes:
+            # Verify sequence tag in list of provided barcodes
             try:
-                file_prefix = tags[tag].id
+                file_prefix = relevant_tags[tag].id
             except KeyError:
                 unknowns += 1
-                if args.force:
-                    file_prefix = str(tag)
-                else:
+                if not args.force:
                     seq_io.print_warning("warning: sequence barcode {0} does "
                                          "not correspond to any of the "
                                          "template barcodes provided. Use "
                                          "--force to write these records "
                                          "anyway".format(tag))
                     continue
-
-        else:
-            file_prefix = str(tag)
 
 
         # Write record to appropriate output file
