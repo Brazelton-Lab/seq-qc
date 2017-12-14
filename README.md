@@ -26,7 +26,7 @@ pip install seq_qc
 
 filter_replicates takes as input fastq or fasta files. Paired reads can either 
 be split in separate files or can be in a single, interleaved file. 
-filter_replicates currently supports searching for are exact, 5'-prefix, and 
+filter_replicates currently supports searching for exact, 5'-prefix, and 
 reverse-complement replicates.
 
 ### Examples
