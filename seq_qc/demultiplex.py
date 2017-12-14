@@ -312,8 +312,15 @@ def main():
             outf = record.write()
             outr = None
 
-        run_info = tuple(header[2: 4])
-        file_prefix = "{0}_{1}_{2}".format(seq_tag, *run_info)
+
+        # Verify headers are formatted as Casava 1.8
+        try:
+            run_info = tuple(header[2: 4])
+        except IndexError:
+            seq_io.print_error("error: the format of the sequence headers is "
+                               "incompatible with this method. Demultiplexing "
+                               "these reads will require a different method "
+                               "to be used instead")
 
         if (not seq_tag.isalpha()) or (len(seq_tag) != 6):
             seq_io.print_error("error: the format of the sequence headers is "
@@ -322,7 +329,9 @@ def main():
                                "to be used instead")
 
 
-        # Increment occurences of barcode
+        file_prefix = "{0}_{1}_{2}".format(seq_tag, *run_info)
+
+        # Increment barcode occurences
         index = "{0}:{1}:{2}".format(seq_tag, *run_info)
         already_seen = False
         for i in sequence_barcodes:
@@ -337,6 +346,7 @@ def main():
             sequence_barcodes.append(seq_entry)
 
 
+        # Map sequence barcodes to barcodes in provided file
         if args.barcodes:
             # Only consider other barcodes within the same multiplex group
             if is_grouped:
