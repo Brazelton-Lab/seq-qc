@@ -33,7 +33,7 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv2'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Production"
-__version__ = "2.0.0"
+__version__ = "2.0.1"
 
 
 class Counter(object):
