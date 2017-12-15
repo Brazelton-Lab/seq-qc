@@ -1,3 +1,4 @@
+#! /usr/bin/env python
 from setuptools import setup, Extension
 
 setup(name='seq-qc',

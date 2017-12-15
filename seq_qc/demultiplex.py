@@ -106,7 +106,8 @@ def main():
         dest='format',
         default='fastq',
         choices=['fasta', 'fastq'],
-        help="sequence file format. Can be fasta or fastq. [default: fastq]")
+        help="sequence file format [default: fastq]. Available options are "
+             "'fasta' or 'fastq'")
     parser.add_argument('-b', '--barcodes', 
         metavar='FILE',
         action=seq_io.Open,
@@ -119,13 +120,13 @@ def main():
              "group should have first the run id, then the flowcell lane, "
              "separated by a colon (e.g. 432:4). If this argument is unused "
              "and --force is provided instead, the output files will be named "
-             "for the barcode and run information found in the headers.")
+             "for the barcode and run information found in the headers")
     parser.add_argument('-s', '--suffix', 
         metavar='STR',
         type=str,
         help="string to append to the end of the file name. The default is to "
              "append the file format (fastq or fasta) and the strand for PE "
-             "data (forward, reverse, interleaved).")
+             "data (forward, reverse, interleaved)")
     parser.add_argument('-c', '--hist',
         metavar='FILE',
         action=seq_io.Open,
@@ -144,17 +145,17 @@ def main():
     compress_arg.add_argument('--gzip',
         action='store_true',
         help="output files should be compressed using the gzip algorithm. The "
-             "suffix '.gz'. will be appended to the file names.")
+             "suffix '.gz'. will be appended to the file names")
     compress_arg.add_argument('--bzip2',
         action='store_true',
         help="output files should be compressed using the bzip2 algorithm. The "
-             "suffix '.bz2' will be appended to the file names.")
+             "suffix '.bz2' will be appended to the file names")
     parser.add_argument('-d', '--distance',
         type=int,
         default=0,
         help="hamming distance allowed between sequence barcodes in order to "
              "be placed into the same partition. Requires a barcodes file "
-             "providing template barcode sequences.")
+             "providing template barcode sequences")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)

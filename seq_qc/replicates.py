@@ -4,7 +4,7 @@ Remove replicate sequences from a FASTQ/A file. Supports searches for exact,
 5'-prefix, and reverse-complement exact and 5'-prefix replicates.
  
 For split read pairs:
-    filter_replicates [flags] -o out.forward [-v out.reverse] --r in.reverse \
+    filter_replicates [flags] -o out.forward [-v out.reverse] --r in.reverse 
         in.forward
 
 For interleaved read pairs:
@@ -118,7 +118,8 @@ def main():
         dest='format',
         default='fastq',
         choices=['fasta', 'fastq'],
-        help="sequence file format. Can be fasta or fastq. [default: fastq]")
+        help="sequence file format [default: fastq]. Available options are "
+             "'fasta' or 'fastq'")
     parser.add_argument('-l', '--log', 
         type=str,
         action=Open,
@@ -136,7 +137,7 @@ def main():
         dest='mem_use',
         action='store_true',
         help="reduce the mount of memory that the program uses. This could "
-             "result in a drastic increase in run time.")
+             "result in a drastic increase in run-time")
     parser.add_argument('--version',
         action='version',
         version='%(prog)s ' + __version__)
