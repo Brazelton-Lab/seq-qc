@@ -1,23 +1,21 @@
 #! /usr/bin/env python
 """
-Standard sequence quality control tool that can be used for base cropping, 
-trimming sequences by quality score, and filtering reads that fail to meet
-a minimum length threshold post cropping and trimming.
+Sequence quality control tool for common preprocessing tasks such as cropping, 
+quality-based trimming, and minimum length filtering.
 
 For single-end and interleaved reads:
     qtrim [options] [-o out.reads] in.reads
  
 For split paired-end reads:
-    qtrim [option] -o out.forward -v out.reverse -s out.singles -r in.reverse
-        in.forward
+    qtrim [option] [-o out.forward] [-v out.reverse] [-s out.singles] \
+        -r in.reverse in.forward
 
-Input files must be in FASTQ format. Output can be in either FASTQ or FASTA 
-format. Compression using gzip and bzip2 algorithms is automatically detected 
-for input files. To compress output, add the appropriate file extension to the 
-file names (.gz, .bz2). For single-end or interleaved reads, use /dev/stdin to 
-indicate that input should be taken from standard input (stdin). Similarly, 
-leaving out the -o argument will cause output to be sent to standard output 
-(stdout).
+FASTQ is the only supported input file format. Compression using gzip and 
+bzip2 algorithms is automatically detected for input files. To compress 
+output, add the appropriate file extension to the file names (.gz, .bz2). For 
+single-end or interleaved reads, use /dev/stdin to indicate that input is from 
+standard input (stdin). Similarly, leaving out '--output' will result in the 
+output being sent to standard output (stdout).
 """
 
 from __future__ import division

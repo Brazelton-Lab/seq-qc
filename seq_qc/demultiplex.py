@@ -1,8 +1,8 @@
 #! /usr/bin/env python
 """
-Split sequences into separate files based on the barcode sequence found in
-the sequence header. The sequence headers should be of the form 
-'@seqid <strand>:N:0:<barcode>' (Casava 1.8).
+Split sequences into separate files based on the barcode sequences found in
+the headers. Headers should be formatted as Casava 1.8 (i.e 
+'@seqid <strand>:N:0:<barcode>').
 
 For single-end and interleaved reads:
     demultiplex_headers [options] input
@@ -12,8 +12,9 @@ For split paired-end reads:
 
 Supported file formats are FASTQ and FASTA. Compression using gzip and bzip2 
 algorithms is automatically detected for the input files. For single-end or
-interleaved reads, use '-' to indicate that input should be taken from standard
-input (stdin).
+interleaved reads, use /dev/stdin to indicate that input is from standard 
+input (stdin). Similarly, leaving out '--output' will result in the output 
+being sent to standard output (stdout).
 """
 
 from __future__ import print_function
@@ -160,7 +161,7 @@ def main():
     args = parser.parse_args()
     all_args = sys.argv[1:]
 
-    seq_io.program_info('demultiplex_headers', all_args, __version__)
+    seq_io.program_info('demultiplex_by_header', all_args, __version__)
 
     if args.distance and not args.barcodes:
         parser.error("error: argument -b/--barcodes must be used with "

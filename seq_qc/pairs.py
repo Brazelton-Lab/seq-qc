@@ -1,10 +1,9 @@
-from screed.dna import complement
-
 class UnpairedReadsError(ValueError):
     def __init__(self, msg, r1, r2):
         super(ValueError, self).__init__(msg)
         self.r1 = r1
         self.r2 = r2
+
 
 def verify_paired(record1, record2):
     """Check if the two sequence records belong to the same fragment.
@@ -36,15 +35,3 @@ def verify_paired(record1, record2):
         return True
 
     return False
-
-def reverse_complement_paired(forward, reverse):
-    """
-    Return a tuple containing the reverse-complement of the paired reads
-    """
-    return (complement(reverse), complement(forward))
-
-def reverse_paired(forward, reverse):
-    """
-    Return a tuple containing the reverse of the paired reads
-    """
-    return (reverse, forward)
