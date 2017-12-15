@@ -109,7 +109,7 @@ def trim_reads(rqueue, wqueue, steps, trunc_n, crop, hcrop, offset=33):
                 start += newstart
                 end += newend
 
-            last = seqlen - end
+            last = lastbase - end
 
             record.sequence, record.quality = record.sequence[start: last], \
                 record.quality[start: last]
