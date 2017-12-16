@@ -2,7 +2,7 @@
 from setuptools import setup, Extension
 
 setup(name='seq-qc',
-      version='2.0.1',
+      version='2.0.2',
       packages=['seq_qc',],
       description='utilities for performing various preprocessing steps on '
           'sequencing reads',
@@ -18,7 +18,7 @@ setup(name='seq-qc',
       ],
       keywords='bioinformatics sequence preprocessing quality control',
       url='https://github.com/Brazelton-Lab/seq_qc/',
-      download_url = 'https://github.com/Brazelton-Lab/seq_qc/archive/v2.0.1.tar.gz',
+      download_url = 'https://github.com/Brazelton-Lab/seq_qc/archive/v2.0.2.tar.gz',
       author='Christopher Thornton',
       author_email='christopher.thornton@utah.edu',
       license='GPLv2',
