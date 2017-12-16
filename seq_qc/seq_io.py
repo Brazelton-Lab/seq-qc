@@ -90,44 +90,18 @@ class Open(argparse.Action):
 
         algo = io.open  # Default to plaintext
 
-        # Capture any mode that isn't read, such as write or append
-        if self.mode.lstrip('U')[0] != 'r':
+        algo_map = {
+            'bz2': self.modules['BZ2File'],
+            'gz':  self.modules['GzipFile'],
+            'xz':  self.modules['LZMAFile']
+        }
 
-            algo_map = {
-                'bz2': self.modules['BZ2File'],
-                'gz':  self.modules['GzipFile'],
-                'xz':  self.modules['LZMAFile']
-            }
-
-            # Base compression algorithm on file extension
-            ext = value.split('.')[-1]
-            try:
-                algo = algo_map[ext]
-            except KeyError:
-                pass
-
-        # Basically read mode
-        else:
-
-            file_sigs = {
-                b'\x42\x5a\x68': self.modules['BZ2File'],
-                b'\x1f\x8b\x08': self.modules['GzipFile'],
-                b'\xfd7zXZ\x00': self.modules['LZMAFile']
-                }
-
-            max_len = max(len(x) for x in file_sigs.keys())
-
-
-            # Check if file is connected to a tty device
-            if sys.stdin.isatty():
-                # Check beginning of file for signature
-                with io.open(filename, 'rb') as in_handle:
-                    start = in_handle.read(max_len)
-                    for sig in file_sigs.keys():
-                        if start.startswith(sig):
-                            algo = file_sigs[sig]
-                            break
-
+        # Base compression algorithm on file extension
+        ext = value.split('.')[-1]
+        try:
+            algo = algo_map[ext]
+        except KeyError:
+            pass
 
         # Filter all **kwargs by the args accepted by the compression algo
         algo_args = set(getfullargspec(algo).args)
@@ -140,7 +114,7 @@ class Open(argparse.Action):
             handle = algo(value, mode=self.mode, **_kwargs)
         except ValueError:
             mode = self.mode.lstrip('U')[0]
-            handle = io.TextIOWrapper(algo(value, mode=mode, **_kwargs))
+            handle = io.TextIOWrapper(algo(value, mode=mode, **_kwargs), encoding='utf-8')
 
         setattr(namespace, self.dest, handle)
 
