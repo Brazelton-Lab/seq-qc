@@ -10,12 +10,12 @@ For split paired-end reads:
     qtrim [option] [-o out.forward] [-v out.reverse] [-s out.singles] 
         -r in.reverse in.forward
 
-FASTQ is the only supported file format. Compression using gzip and bzip2
-algorithms is automatically detected for input files. To compress output, add 
-the appropriate file extension to the file names (.gz, .bz2). For single-end 
-or interleaved reads, use /dev/stdin to indicate that input is from standard 
-input (stdin). Similarly, leaving out '--output' will result in the output 
-being sent to standard output (stdout).
+FASTQ is the only supported file format. The compression algorithm is 
+automatically detected for input files through their file extension. To 
+compress the output files, add the appropriate file extension to the file names 
+(.gz, .bz2). For single-end or interleaved reads, use /dev/stdin to indicate 
+that input is from standard input (stdin). Similarly, leaving out '--output' 
+will result in the output being sent to standard output (stdout).
 """
 
 from __future__ import division

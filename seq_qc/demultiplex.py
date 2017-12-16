@@ -11,10 +11,10 @@ For split paired-end reads:
     demultiplex_headers [options] in.forward in.reverse
 
 Supported file formats are FASTQ and FASTA. Compression using gzip and bzip2 
-algorithms is automatically detected for the input files. For single-end or
-interleaved reads, use /dev/stdin to indicate that input is from standard 
-input (stdin). Similarly, leaving out '--output' will result in the output 
-being sent to standard output (stdout).
+algorithms is automatically detected for the input files through their file 
+extension. For single-end or interleaved reads, use /dev/stdin to indicate 
+that input is from standard input (stdin). Similarly, leaving out '--output' 
+will result in the output being sent to standard output (stdout).
 """
 
 from __future__ import print_function

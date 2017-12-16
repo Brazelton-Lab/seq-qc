@@ -10,12 +10,12 @@ For split read pairs:
 For interleaved read pairs:
     filter_replicates [flags] [-o out.interleaved] in.interleaved
 
-Supported file formats are FASTQ and FASTA. Compression using gzip and bzip2 
-algorithms is automatically detected for input files. To compress the output 
-files, add the appropriate file extension to the file names (.gz, .bz2). For 
-interleaved or single-end reads, use /dev/stdin to indicate that input is from  
-standard input (stdin). Similarly, leaving out '--output' will result in the 
-output being sent to standard output (stdout).
+Supported file formats are FASTQ and FASTA. The compression algorithms is 
+automatically detected for input files through their file extension. To 
+compress the output files, append the appropriate file extension to the file 
+names (.gz, .bz2). For interleaved or single-end reads, use /dev/stdin to 
+indicate that input is from standard input (stdin). Similarly, leaving out 
+'--output' will result in the output being sent to standard output (stdout).
 """
 
 from __future__ import division
