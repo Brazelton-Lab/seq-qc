@@ -241,6 +241,10 @@ def parse_commas(args, argname):
     return (arg1, arg2)
 
 
+def do_nothing(args):
+    pass
+
+
 def self(args):
     return args
 
