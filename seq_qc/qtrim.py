@@ -140,6 +140,10 @@ def write_reads(queue, fout, rout, sout, minlen, p, d, s1, s2):
     """
     lock = Lock()
 
+    fwrite = fout.write
+    rwrite = rout.write if rout else do_nothing
+    swrite = sout.write if sout else do_nothing
+
     # Loop until write queue contains kill message
     while True:
 
@@ -161,7 +165,7 @@ def write_reads(queue, fout, rout, sout, minlen, p, d, s1, s2):
             # Record passed length threshold
             if first_greater:
                 p.increment()
-                fout.write(trimmed[0].write())
+                fwrite(trimmed[0].write())
             else:
                 d.increment()
         else:
@@ -169,18 +173,18 @@ def write_reads(queue, fout, rout, sout, minlen, p, d, s1, s2):
             if first_greater and second_greater:
                 p.increment()
                 with lock:
-                    fout.write(trimmed[0].write())
-                    rout.write(trimmed[1].write())
+                    fwrite(trimmed[0].write())
+                    rwrite(trimmed[1].write())
 
             # Forward reads orphaned, reverse reads failed length threshold
             elif first_greater and trimlen[1] < minlen[1]:
                 s1.increment()
-                sout.write(trimmed[0].write())
+                swrite(trimmed[0].write())
 
             # Reverse reads orphaned, forward reads failed length threshold
             elif trimlen[0] < minlen[0] and second_greater:
                 s2.increment()
-                sout.write(trimmed[1].write())
+                swrite(trimmed[1].write())
 
             # Both read pairs failed length threshold and were discarded
             else:
