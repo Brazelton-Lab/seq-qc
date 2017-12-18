@@ -32,7 +32,7 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv2'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Production"
-__version__ = "1.0.1"
+__version__ = "1.0.2"
 
 
 class BarcodeEntry(object):
@@ -449,8 +449,8 @@ def main():
 
     # Write output histogram and sequence barcode statistics
     houtstats = "Sequence barcodes found:\t{!s}\n  Mean abundance:\t"\
-                "{:.2}\n  Median abundance:\t{:.2}\n  Abundance SD:\t"\
-                "\t{:.2}\n\n  Barcode\tRun Information\tAbundance\n"
+                "{:.2f}\n  Median abundance:\t{:.2f}\n  Abundance SD:\t"\
+                "\t{:.2f}\n\n  Barcode\tRun Information\tAbundance\n"
 
     num_seq_tags = len(sequence_barcodes)
     houtstats += "  {!s}\t{!s}\t{!s}\n" * num_seq_tags
@@ -471,8 +471,8 @@ def main():
     print(houtstats.format(*tuple(hstats)), file=sys.stderr)
 
     if args.hist:
-        out_hist("#Total:  {}\n#Mean:   {:.2}\n#Median: {:.2}\n#STDev:  "
-                 "{:.2}\n".format(num_seq_tags, b_mean, b_median, b_sd))
+        out_hist("#Total:  {}\n#Mean:   {:.2f}\n#Median: {:.2f}\n#STDev:  "
+                 "{:.2f}\n".format(num_seq_tags, b_mean, b_median, b_sd))
 
         for abundance in sorted(set(barcode_abundances)):
             counts = barcode_abundances.count(abundance)
