@@ -33,7 +33,7 @@ __author__ = "Christopher Thornton"
 __license__ = 'GPLv2'
 __maintainer__ = 'Christopher Thornton'
 __status__ = "Production"
-__version__ = "2.0.1"
+__version__ = "2.0.2"
 
 
 class Counter(object):
@@ -446,8 +446,8 @@ def main():
 
 
     max_read_threads = args.threads - 1 if args.threads > 1 else 1
-    read_queue = Queue(max_read_threads)  # Max queue prevents race conditions
-    write_queue = Queue()
+    read_queue = Queue(max_read_threads)  # Max queue size prevents race conditions
+    write_queue = Queue(max_read_threads)
 
    
     # Initialize threads to process reads and writes
