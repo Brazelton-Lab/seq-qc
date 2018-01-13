@@ -2,7 +2,7 @@
 from setuptools import setup, Extension
 
 setup(name='seq-qc',
-      version='2.0.3',
+      version='2.0.4',
       packages=['seq_qc',],
       description='utilities for performing various preprocessing steps on '
           'sequencing reads',
