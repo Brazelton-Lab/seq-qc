@@ -1,9 +1,9 @@
-# seq_qc - Python package with modules for preprocessing sequencing reads
+# seq-qc - Python package with modules for preprocessing sequencing reads
 
 ## About
 
-seq_qc is a python package for performing various quality control tasks on 
-sequencing reads. Currently, seq_qc has three programs for this - a 
+seq-qc is a python package for performing various quality control tasks on 
+sequencing reads. Currently, seq-qc has three programs for this - a 
 dereplicator of paired-end reads, a tool for performing quality-based
 trimming, and a demultiplexer that uses the barcodes in sequence headers to
 partition sequences.
@@ -19,7 +19,7 @@ Python Libraries:
 
 ## Installation
 
-pip install seq_qc
+pip install seq-qc
 
 ## Usage
 
